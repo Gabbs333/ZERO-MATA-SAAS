@@ -1,0 +1,104 @@
+{
+  "etablissements": [
+    {
+      "id": "eb4f25a9-a174-4558-80a8-9c6f13b58730",
+      "nom": "Établissement Principal",
+      "adresse": null,
+      "telephone": null,
+      "email": null,
+      "statut_abonnement": "actif",
+      "date_debut": "2026-01-23T02:25:13.561254+00:00",
+      "date_fin": "2027-01-23T02:25:13.561254+00:00",
+      "actif": true,
+      "dernier_paiement_date": null,
+      "dernier_paiement_confirme_par": null,
+      "date_creation": "2026-01-23T02:25:13.561254+00:00",
+      "date_modification": "2026-01-23T02:25:13.561254+00:00"
+    },
+    {
+      "id": "e0000000-0000-0000-0000-000000000001",
+      "nom": "Snack Bar Test",
+      "adresse": "123 Avenue de la République, Douala",
+      "telephone": "+237 600000000",
+      "email": "contact@snackbar.cm",
+      "statut_abonnement": "actif",
+      "date_debut": "2026-02-04T23:31:17.212216+00:00",
+      "date_fin": "2027-02-05T22:56:19.672503+00:00",
+      "actif": true,
+      "dernier_paiement_date": null,
+      "dernier_paiement_confirme_par": null,
+      "date_creation": "2026-02-04T23:31:17.212216+00:00",
+      "date_modification": "2026-02-04T23:31:17.212216+00:00"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "8d55e0ff-1927-4ea3-9864-c1e0e978d9fd",
+      "role": "patron",
+      "nom": "Dupont",
+      "prenom": "Jean",
+      "actif": true,
+      "created_at": "2026-01-22T17:53:32.903717+00:00",
+      "updated_at": "2026-01-22T17:53:32.903717+00:00",
+      "etablissement_id": "e0000000-0000-0000-0000-000000000001"
+    },
+    {
+      "id": "867d0706-99d0-4cdb-9285-328278e1462f",
+      "role": "comptoir",
+      "nom": "Martin",
+      "prenom": "Sophie",
+      "actif": true,
+      "created_at": "2026-01-22T17:53:45.672577+00:00",
+      "updated_at": "2026-01-22T17:53:45.672577+00:00",
+      "etablissement_id": "e0000000-0000-0000-0000-000000000001"
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000000",
+      "role": "admin",
+      "nom": "Admin",
+      "prenom": "Systeme",
+      "actif": true,
+      "created_at": "2026-02-05T22:30:40.040413+00:00",
+      "updated_at": "2026-02-05T22:30:40.040413+00:00",
+      "etablissement_id": null
+    },
+    {
+      "id": "95e35afb-a5e5-4ecd-bb6a-580e4d3999f6",
+      "role": "serveuse",
+      "nom": "Serveuse",
+      "prenom": "Test",
+      "actif": true,
+      "created_at": "2026-02-10T19:43:56.829141+00:00",
+      "updated_at": "2026-02-10T19:43:56.829141+00:00",
+      "etablissement_id": "e0000000-0000-0000-0000-000000000001"
+    },
+    {
+      "id": "5e6f0070-c21e-49f3-bbc1-0766753e5608",
+      "role": "serveuse",
+      "nom": "Serveuse Test",
+      "prenom": "Test",
+      "actif": true,
+      "created_at": "2026-02-11T02:15:09.843693+00:00",
+      "updated_at": "2026-02-11T02:15:09.843693+00:00",
+      "etablissement_id": "e0000000-0000-0000-0000-000000000001"
+    }
+  ],
+  "produits": [],
+  "stock": [],
+  "tables": [
+    {
+      "id": "4ec0724e-91ad-4e12-a851-42377f9dc778",
+      "numero": "T-TEST-001",
+      "statut": "libre",
+      "updated_at": "2026-01-21T17:49:18.175082+00:00",
+      "etablissement_id": "eb4f25a9-a174-4558-80a8-9c6f13b58730"
+    }
+  ],
+  "commandes": [],
+  "commande_items": [],
+  "mouvements_stock": [],
+  "ravitaillements": [],
+  "ravitaillement_items": [],
+  "factures": [],
+  "encaissements": []
+}

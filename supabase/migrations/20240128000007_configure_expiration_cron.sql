@@ -1,0 +1,155 @@
+-- Migration: Configure Expiration Cron Job
+-- Description: Documentation for setting up automatic subscription expiration
+-- 
+-- IMPORTANT: pg_cron is NOT available on Supabase hosted projects.
+-- This migration provides documentation for configuring an external cron service.
+--
+-- Requirements: 4.1, 4.6, 13.2
+
+-- ============================================================================
+-- EXTERNAL CRON CONFIGURATION (RECOMMENDED FOR SUPABASE HOSTED)
+-- ============================================================================
+
+-- Since pg_cron is not available on Supabase hosted, use an external service:
+-- 
+-- Option 1: cron-job.org (Free tier available)
+-- Option 2: GitHub Actions (Free for public repos)
+-- Option 3: Any other HTTP cron service
+--
+-- Configuration Steps:
+--
+-- 1. Set the EXPIRATION_SECRET_KEY environment variable in Supabase:
+--    - Go to Project Settings > Edge Functions
+--    - Add secret: EXPIRATION_SECRET_KEY=<generate-a-strong-random-key>
+--
+-- 2. Configure external cron service to call the Edge Function:
+--    URL: https://wgzbpgauajgxkxoezlqw.supabase.co/functions/v1/expire-subscriptions
+--    Method: POST
+--    Headers:
+--      - Authorization: Bearer <EXPIRATION_SECRET_KEY>
+--      - Content-Type: application/json
+--    Schedule: Daily at 01:00 UTC (0 1 * * *)
+--
+-- 3. Test the cron job manually first:
+--    curl -X POST \
+--      https://wgzbpgauajgxkxoezlqw.supabase.co/functions/v1/expire-subscriptions \
+--      -H "Authorization: Bearer <EXPIRATION_SECRET_KEY>" \
+--      -H "Content-Type: application/json"
+
+-- ============================================================================
+-- EXAMPLE: GITHUB ACTIONS WORKFLOW
+-- ============================================================================
+
+-- Create .github/workflows/expire-subscriptions.yml:
+--
+-- name: Expire Subscriptions
+-- 
+-- on:
+--   schedule:
+--     - cron: '0 1 * * *'  # Daily at 01:00 UTC
+--   workflow_dispatch:  # Allow manual trigger
+-- 
+-- jobs:
+--   expire-subscriptions:
+--     runs-on: ubuntu-latest
+--     steps:
+--       - name: Call Expiration Function
+--         run: |
+--           curl -X POST \
+--             https://wgzbpgauajgxkxoezlqw.supabase.co/functions/v1/expire-subscriptions \
+--             -H "Authorization: Bearer ${{ secrets.EXPIRATION_SECRET_KEY }}" \
+--             -H "Content-Type: application/json" \
+--             -f || exit 1
+--
+-- Then add EXPIRATION_SECRET_KEY to GitHub repository secrets.
+
+-- ============================================================================
+-- EXAMPLE: CRON-JOB.ORG CONFIGURATION
+-- ============================================================================
+
+-- 1. Create account at https://cron-job.org
+-- 2. Create new cron job with:
+--    - Title: Expire Subscriptions
+--    - URL: https://wgzbpgauajgxkxoezlqw.supabase.co/functions/v1/expire-subscriptions
+--    - Schedule: Every day at 01:00 UTC
+--    - Request Method: POST
+--    - Custom Headers:
+--      * Authorization: Bearer <EXPIRATION_SECRET_KEY>
+--      * Content-Type: application/json
+--    - Notifications: Enable email on failure
+
+-- ============================================================================
+-- MONITORING AND ALERTS
+-- ============================================================================
+
+-- Monitor expiration execution via audit_logs:
+-- 
+-- SELECT 
+--   date_creation,
+--   action,
+--   details->>'nom' as etablissement_nom,
+--   details->>'date_fin' as date_fin
+-- FROM audit_logs
+-- WHERE action IN ('SUBSCRIPTION_EXPIRED', 'EXPIRATION_ERROR')
+-- ORDER BY date_creation DESC
+-- LIMIT 50;
+
+-- Check for establishments that should have expired but didn't:
+--
+-- SELECT 
+--   id,
+--   nom,
+--   date_fin,
+--   statut_abonnement,
+--   actif
+-- FROM etablissements
+-- WHERE date_fin < NOW()
+--   AND statut_abonnement = 'actif'
+-- ORDER BY date_fin;
+
+-- ============================================================================
+-- ALTERNATIVE: PG_CRON (ONLY FOR SELF-HOSTED SUPABASE)
+-- ============================================================================
+
+-- If you are using a self-hosted Supabase instance with pg_cron enabled,
+-- you can use the following SQL to schedule the cron job:
+--
+-- -- Enable pg_cron extension
+-- CREATE EXTENSION IF NOT EXISTS pg_cron;
+--
+-- -- Schedule daily expiration check at 01:00 UTC
+-- SELECT cron.schedule(
+--   'expire-subscriptions-daily',
+--   '0 1 * * *',
+--   $$
+--   SELECT net.http_post(
+--     url := 'https://wgzbpgauajgxkxoezlqw.supabase.co/functions/v1/expire-subscriptions',
+--     headers := jsonb_build_object(
+--       'Authorization', 'Bearer ' || current_setting('app.settings.expiration_secret_key'),
+--       'Content-Type', 'application/json'
+--     )
+--   );
+--   $$
+-- );
+--
+-- -- View scheduled jobs
+-- SELECT * FROM cron.job;
+--
+-- -- Unschedule if needed
+-- -- SELECT cron.unschedule('expire-subscriptions-daily');
+
+-- ============================================================================
+-- DEPLOYMENT CHECKLIST
+-- ============================================================================
+
+-- [ ] 1. Generate strong random secret key for EXPIRATION_SECRET_KEY
+-- [ ] 2. Add EXPIRATION_SECRET_KEY to Supabase Edge Functions secrets
+-- [ ] 3. Deploy expire-subscriptions Edge Function (already done)
+-- [ ] 4. Test Edge Function manually with curl
+-- [ ] 5. Configure external cron service (cron-job.org or GitHub Actions)
+-- [ ] 6. Test cron job execution
+-- [ ] 7. Set up monitoring/alerts for failures
+-- [ ] 8. Document cron configuration in project README
+
+-- This migration is idempotent (no actual database changes)
+-- It serves as documentation for the cron configuration process

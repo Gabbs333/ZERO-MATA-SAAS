@@ -1,0 +1,996 @@
+function_name,source_code
+cleanup_old_exports,"
+BEGIN
+  DELETE FROM storage.objects
+  WHERE bucket_id = 'exports'
+  AND created_at < NOW() - INTERVAL '30 days';
+END;
+"
+get_current_user_etablissement_id,"
+DECLARE
+  user_etablissement_id uuid;
+BEGIN
+  SELECT etablissement_id INTO user_etablissement_id FROM public.profiles WHERE id = auth.uid();
+  RETURN user_etablissement_id;
+END;
+"
+health_check," BEGIN RETURN 'OK'; END; "
+get_analytics_ca_encaissements,"
+BEGIN
+  RETURN QUERY
+  SELECT 
+    v.date,
+    v.chiffre_affaires,
+    v.encaissements,
+    v.nombre_commandes,
+    v.nombre_factures
+  FROM analytics_ca_encaissements v
+  WHERE v.date >= p_debut::DATE
+    AND v.date <= p_fin::DATE
+  ORDER BY v.date ASC;
+END;
+"
+get_dashboard_kpis,"
+DECLARE
+  v_result JSON;
+BEGIN
+  SELECT json_build_object(
+    'chiffre_affaires', chiffre_affaires,
+    'encaissements', encaissements,
+    'creances', creances,
+    'benefice', benefice,
+    'commandes_count', nombre_commandes,
+    'panier_moyen', panier_moyen,
+    'factures_impayees', nombre_factures_impayees,
+    'taux_encaissement', taux_encaissement
+  )
+  INTO v_result
+  FROM get_kpis(p_debut, p_fin);
+  
+  RETURN v_result;
+END;
+"
+get_payment_modes_stats,"
+DECLARE
+  v_total_periode BIGINT;
+BEGIN
+  -- Get total encaissements for the period to calculate percentages
+  SELECT COALESCE(SUM(montant), 0) INTO v_total_periode
+  FROM encaissements
+  WHERE date_encaissement >= p_debut AND date_encaissement <= p_fin;
+
+  RETURN QUERY
+  SELECT 
+    e.mode_paiement,
+    SUM(e.montant)::BIGINT as montant_total,
+    COUNT(*)::BIGINT as nombre_transactions,
+    CASE 
+      WHEN v_total_periode > 0 THEN ROUND((SUM(e.montant)::NUMERIC / v_total_periode) * 100, 2)
+      ELSE 0
+    END as pourcentage_total
+  FROM encaissements e
+  WHERE e.date_encaissement >= p_debut AND e.date_encaissement <= p_fin
+  GROUP BY e.mode_paiement
+  ORDER BY montant_total DESC;
+END;
+"
+search_transactions,"
+DECLARE
+  v_offset INTEGER;
+  v_total INTEGER;
+  v_transactions JSON;
+  v_result JSON;
+BEGIN
+  -- Valider les paramètres
+  IF p_page < 1 THEN
+    RAISE EXCEPTION 'Le numéro de page doit être >= 1';
+  END IF;
+  
+  IF p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION 'La limite doit être entre 1 et 100';
+  END IF;
+
+  -- Calculer l'offset
+  v_offset := (p_page - 1) * p_limit;
+
+  -- Compter le nombre total de résultats
+  SELECT COUNT(DISTINCT c.id)
+  INTO v_total
+  FROM commandes c
+  LEFT JOIN commande_items ci ON ci.commande_id = c.id
+  WHERE c.statut = 'validee'
+    AND (p_date_debut IS NULL OR c.date_validation >= p_date_debut)
+    AND (p_date_fin IS NULL OR c.date_validation <= p_date_fin)
+    AND (p_serveuse_id IS NULL OR c.serveuse_id = p_serveuse_id)
+    AND (p_table_id IS NULL OR c.table_id = p_table_id)
+    AND (p_produit_id IS NULL OR ci.produit_id = p_produit_id);
+
+  -- Récupérer les transactions avec pagination
+  SELECT json_agg(transaction_data)
+  INTO v_transactions
+  FROM (
+    SELECT json_build_object(
+      'id', c.id,
+      'numero_commande', c.numero_commande,
+      'table', json_build_object(
+        'id', t.id,
+        'numero', t.numero
+      ),
+      'serveuse', json_build_object(
+        'id', s.id,
+        'nom', s.nom,
+        'prenom', s.prenom
+      ),
+      'validateur', json_build_object(
+        'id', v.id,
+        'nom', v.nom,
+        'prenom', v.prenom
+      ),
+      'montant_total', c.montant_total,
+      'created_at', c.created_at,
+      'date_validation', c.date_validation,
+      'items', (
+        SELECT json_agg(json_build_object(
+          'produit_id', ci.produit_id,
+          'nom_produit', ci.nom_produit,
+          'quantite', ci.quantite,
+          'prix_unitaire', ci.prix_unitaire,
+          'montant_ligne', ci.montant_ligne
+        ))
+        FROM commande_items ci
+        WHERE ci.commande_id = c.id
+      ),
+      'facture', (
+        SELECT json_build_object(
+          'id', f.id,
+          'numero_facture', f.numero_facture,
+          'statut', f.statut,
+          'montant_paye', f.montant_paye,
+          'montant_restant', f.montant_restant
+        )
+        FROM factures f
+        WHERE f.commande_id = c.id
+      )
+    ) AS transaction_data
+    FROM commandes c
+    INNER JOIN tables t ON t.id = c.table_id
+    INNER JOIN profiles s ON s.id = c.serveuse_id
+    LEFT JOIN profiles v ON v.id = c.validateur_id
+    LEFT JOIN commande_items ci ON ci.commande_id = c.id
+    WHERE c.statut = 'validee'
+      AND (p_date_debut IS NULL OR c.date_validation >= p_date_debut)
+      AND (p_date_fin IS NULL OR c.date_validation <= p_date_fin)
+      AND (p_serveuse_id IS NULL OR c.serveuse_id = p_serveuse_id)
+      AND (p_table_id IS NULL OR c.table_id = p_table_id)
+      AND (p_produit_id IS NULL OR ci.produit_id = p_produit_id)
+    GROUP BY c.id, t.id, t.numero, s.id, s.nom, s.prenom, v.id, v.nom, v.prenom
+    ORDER BY c.date_validation DESC
+    LIMIT p_limit
+    OFFSET v_offset
+  ) AS transactions;
+
+  -- Construire le résultat avec métadonnées de pagination
+  v_result := json_build_object(
+    'transactions', COALESCE(v_transactions, '[]'::json),
+    'pagination', json_build_object(
+      'page', p_page,
+      'limit', p_limit,
+      'total', v_total,
+      'total_pages', CEIL(v_total::NUMERIC / p_limit)
+    ),
+    'filters', json_build_object(
+      'date_debut', p_date_debut,
+      'date_fin', p_date_fin,
+      'serveuse_id', p_serveuse_id,
+      'table_id', p_table_id,
+      'produit_id', p_produit_id
+    )
+  );
+
+  RETURN v_result;
+END;
+"
+is_current_user_admin,"
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin');
+END;
+"
+get_user_role,"
+DECLARE
+  v_role text;
+BEGIN
+  -- Lire le rôle depuis les métadonnées de l'utilisateur (plus rapide et sûr)
+  SELECT raw_user_meta_data->>'role' INTO v_role
+  FROM auth.users
+  WHERE id = auth.uid();
+  
+  -- Fallback si pas trouvé dans metadata (optionnel, pour compatibilité)
+  IF v_role IS NULL THEN
+     RETURN NULL;
+  END IF;
+
+  RETURN v_role;
+END;
+"
+get_kpis,"
+DECLARE
+  v_ca BIGINT;
+  v_encaissements BIGINT;
+  v_creances BIGINT;
+  v_benefice BIGINT;
+  v_nombre_commandes BIGINT;
+  v_panier_moyen NUMERIC;
+  v_nombre_factures_impayees BIGINT;
+  v_taux_encaissement NUMERIC;
+  v_cout_total BIGINT;
+BEGIN
+  -- Calculate Chiffre d'Affaires (CA)
+  SELECT COALESCE(SUM(c.montant_total), 0)
+  INTO v_ca
+  FROM commandes c
+  WHERE c.statut = 'validee'
+    AND c.date_validation >= p_date_debut
+    AND c.date_validation <= p_date_fin;
+  
+  -- Calculate Encaissements
+  SELECT COALESCE(SUM(e.montant), 0)
+  INTO v_encaissements
+  FROM encaissements e
+  WHERE e.date_encaissement >= p_date_debut
+    AND e.date_encaissement <= p_date_fin;
+  
+  -- Calculate Créances (CA - Encaissements)
+  v_creances := v_ca - v_encaissements;
+  
+  -- Calculate Bénéfice (CA - Coût d'achat des produits vendus)
+  -- Get total cost of products sold in the period
+  SELECT COALESCE(SUM(ci.quantite * COALESCE(
+    (SELECT ms.cout_unitaire 
+     FROM mouvements_stock ms 
+     WHERE ms.produit_id = ci.produit_id 
+       AND ms.type = 'entree' 
+       AND ms.cout_unitaire IS NOT NULL
+     ORDER BY ms.date_creation DESC 
+     LIMIT 1
+    ), 0
+  )), 0)
+  INTO v_cout_total
+  FROM commande_items ci
+  JOIN commandes c ON ci.commande_id = c.id
+  WHERE c.statut = 'validee'
+    AND c.date_validation >= p_date_debut
+    AND c.date_validation <= p_date_fin;
+  
+  v_benefice := v_ca - v_cout_total;
+  
+  -- Calculate Nombre de Commandes
+  SELECT COUNT(*)
+  INTO v_nombre_commandes
+  FROM commandes c
+  WHERE c.statut = 'validee'
+    AND c.date_validation >= p_date_debut
+    AND c.date_validation <= p_date_fin;
+  
+  -- Calculate Panier Moyen
+  IF v_nombre_commandes > 0 THEN
+    v_panier_moyen := v_ca::NUMERIC / v_nombre_commandes;
+  ELSE
+    v_panier_moyen := 0;
+  END IF;
+  
+  -- Calculate Nombre de Factures Impayées in the period
+  SELECT COUNT(*)
+  INTO v_nombre_factures_impayees
+  FROM factures f
+  WHERE f.statut != 'payee'
+    AND f.date_generation >= p_date_debut
+    AND f.date_generation <= p_date_fin;
+  
+  -- Calculate Taux d'Encaissement (Encaissements / CA * 100)
+  IF v_ca > 0 THEN
+    v_taux_encaissement := (v_encaissements::NUMERIC / v_ca) * 100;
+  ELSE
+    v_taux_encaissement := 0;
+  END IF;
+  
+  -- Return results
+  RETURN QUERY
+  SELECT 
+    v_ca,
+    v_encaissements,
+    v_creances,
+    v_benefice,
+    v_nombre_commandes,
+    ROUND(v_panier_moyen, 2),
+    v_nombre_factures_impayees,
+    ROUND(v_taux_encaissement, 2);
+END;
+"
+get_factures_impayees_alerts,"
+BEGIN
+  RETURN QUERY
+  SELECT 
+    f.id,
+    f.numero_facture,
+    f.commande_id,
+    f.montant_total,
+    f.montant_paye,
+    f.montant_restant,
+    f.statut,
+    f.date_generation,
+    -- Calculate age in hours
+    EXTRACT(EPOCH FROM (NOW() - f.date_generation)) / 3600 AS age_heures,
+    -- Calculate age in days
+    EXTRACT(EPOCH FROM (NOW() - f.date_generation)) / 86400 AS age_jours
+  FROM factures f
+  WHERE f.statut != 'payee'
+    AND EXTRACT(EPOCH FROM (NOW() - f.date_generation)) / 3600 > 24
+  ORDER BY f.date_generation ASC;
+END;
+"
+update_table_status_on_commande_validate,"
+BEGIN
+  -- Mark table as ""occupee"" when order is validated
+  IF NEW.statut = 'validee' AND OLD.statut = 'en_attente' THEN
+    UPDATE tables
+    SET statut = 'occupee',
+        derniere_mise_a_jour = NOW()
+    WHERE id = NEW.table_id;
+  END IF;
+  
+  RETURN NEW;
+END;
+"
+generate_facture_after_validation,"
+BEGIN
+  IF NEW.statut = 'validee' AND OLD.statut = 'en_attente' THEN
+    INSERT INTO factures (
+      id, commande_id, montant_total, montant_paye, montant_restant,
+      statut, date_generation, date_paiement_complet
+    ) VALUES (
+      gen_random_uuid(), NEW.id, NEW.montant_total, 0, NEW.montant_total,
+      'en_attente_paiement', NOW(), NULL
+    );
+  END IF;
+  RETURN NEW;
+END;
+"
+get_user_etablissement_id,"
+  SELECT etablissement_id FROM public.profiles WHERE id = auth.uid();
+"
+update_stock_after_commande_validation,"
+DECLARE
+  item RECORD;
+  stock_disponible INTEGER;
+BEGIN
+  IF NEW.statut = 'validee' AND OLD.statut = 'en_attente' THEN
+    FOR item IN 
+      SELECT produit_id, quantite 
+      FROM commande_items 
+      WHERE commande_id = NEW.id
+    LOOP
+      SELECT quantite_disponible INTO stock_disponible
+      FROM stock
+      WHERE produit_id = item.produit_id;
+      
+      IF stock_disponible < item.quantite THEN
+        RAISE EXCEPTION 'Stock insuffisant pour le produit %', item.produit_id;
+      END IF;
+      
+      UPDATE stock
+      SET quantite_disponible = quantite_disponible - item.quantite,
+          updated_at = NOW()
+      WHERE produit_id = item.produit_id;
+      
+      INSERT INTO mouvements_stock (
+        id, produit_id, type, quantite, cout_unitaire,
+        reference, type_reference, utilisateur_id, date_creation
+      ) VALUES (
+        gen_random_uuid(), item.produit_id, 'sortie', item.quantite, NULL,
+        NEW.id::TEXT, 'commande', NEW.validateur_id, NOW()
+      );
+    END LOOP;
+  END IF;
+  RETURN NEW;
+END;
+"
+handle_new_user,"
+DECLARE v_etablissement_id UUID;
+BEGIN
+  -- Safe extraction of metadata
+  IF NEW.raw_user_meta_data->>'etablissement_id' IS NOT NULL THEN
+    v_etablissement_id := (NEW.raw_user_meta_data->>'etablissement_id')::UUID;
+  END IF;
+
+  -- Insert profile safely
+  INSERT INTO public.profiles (id, nom, prenom, role, etablissement_id, actif)
+  VALUES (
+    NEW.id, 
+    COALESCE(NEW.raw_user_meta_data->>'nom', 'Non renseigné'), 
+    COALESCE(NEW.raw_user_meta_data->>'prenom', 'Non renseigné'), 
+    COALESCE(NEW.raw_user_meta_data->>'role', 'serveuse'), 
+    v_etablissement_id, 
+    TRUE
+  )
+  ON CONFLICT (id) DO NOTHING; -- Avoid crashing if profile already exists
+  
+  RETURN NEW;
+END;
+"
+update_table_status_on_commande_create,"
+BEGIN
+  -- Mark table as ""commande_en_attente"" when a new order is created
+  UPDATE tables
+  SET statut = 'commande_en_attente',
+      derniere_mise_a_jour = NOW()
+  WHERE id = NEW.table_id;
+  
+  RETURN NEW;
+END;
+"
+update_facture_after_encaissement,"
+DECLARE
+  total_encaisse DECIMAL;
+  facture_montant DECIMAL;
+BEGIN
+  SELECT COALESCE(SUM(montant), 0) INTO total_encaisse
+  FROM encaissements WHERE facture_id = NEW.facture_id;
+  
+  SELECT montant_total INTO facture_montant
+  FROM factures WHERE id = NEW.facture_id;
+  
+  IF total_encaisse >= facture_montant THEN
+    UPDATE factures SET montant_paye = total_encaisse, montant_restant = 0,
+      statut = 'payee', date_paiement_complet = NOW() WHERE id = NEW.facture_id;
+  ELSIF total_encaisse > 0 THEN
+    UPDATE factures SET montant_paye = total_encaisse,
+      montant_restant = facture_montant - total_encaisse,
+      statut = 'partiellement_payee' WHERE id = NEW.facture_id;
+  END IF;
+  RETURN NEW;
+END;
+"
+trigger_log_etablissement_creation,"
+BEGIN
+  PERFORM log_audit_action('ESTABLISHMENT_CREATED', 'etablissements', NEW.id,
+    jsonb_build_object('nom', NEW.nom, 'date_debut', NEW.date_debut, 'date_fin', NEW.date_fin, 'statut_abonnement', NEW.statut_abonnement), NEW.id);
+  RETURN NEW;
+END;
+"
+create_stock_for_product,"
+begin
+  insert into public.stock (produit_id, quantite_disponible)
+  values (new.id, 0);
+  return new;
+end;
+"
+generate_numero_commande,"
+DECLARE
+  next_num INTEGER;
+  date_prefix TEXT;
+BEGIN
+  date_prefix := 'CMD-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-';
+  SELECT COALESCE(MAX(CAST(SUBSTRING(numero_commande FROM '\\d+$') AS INTEGER)), 0) + 1
+  INTO next_num
+  FROM commandes
+  WHERE numero_commande LIKE date_prefix || '%';
+  NEW.numero_commande := date_prefix || LPAD(next_num::TEXT, 3, '0');
+  RETURN NEW;
+END;
+"
+get_analytics,"
+DECLARE
+  v_result JSON;
+  v_kpis JSON;
+  v_ventes_produits JSON;
+  v_evolution JSON;
+BEGIN
+  -- Valider la granularité
+  IF p_granularite NOT IN ('heure', 'jour', 'semaine', 'mois') THEN
+    RAISE EXCEPTION 'Granularité invalide. Valeurs acceptées: heure, jour, semaine, mois';
+  END IF;
+
+  -- Calculer les KPIs pour la période
+  SELECT json_build_object(
+    'chiffre_affaires', COALESCE(SUM(CASE WHEN c.statut = 'validee' THEN c.montant_total ELSE 0 END), 0),
+    'benefice', COALESCE(SUM(CASE WHEN c.statut = 'validee' THEN c.montant_total ELSE 0 END), 0) - 
+      COALESCE(SUM(
+        CASE 
+          WHEN c.statut = 'validee' THEN (
+            SELECT COALESCE(SUM(ci.quantite * COALESCE(ms.cout_unitaire, 0)), 0)
+            FROM commande_items ci
+            LEFT JOIN LATERAL (
+              SELECT cout_unitaire
+              FROM mouvements_stock
+              WHERE produit_id = ci.produit_id
+                AND type = 'entree'
+                AND cout_unitaire IS NOT NULL
+              ORDER BY date_creation DESC
+              LIMIT 1
+            ) ms ON true
+            WHERE ci.commande_id = c.id
+          )
+          ELSE 0
+        END
+      ), 0),
+    'nombre_commandes', COUNT(CASE WHEN c.statut = 'validee' THEN 1 END),
+    'panier_moyen', CASE 
+      WHEN COUNT(CASE WHEN c.statut = 'validee' THEN 1 END) > 0 
+      THEN COALESCE(SUM(CASE WHEN c.statut = 'validee' THEN c.montant_total ELSE 0 END), 0) / 
+           COUNT(CASE WHEN c.statut = 'validee' THEN 1 END)
+      ELSE 0
+    END,
+    'produits_vendus', COALESCE(SUM(
+      CASE 
+        WHEN c.statut = 'validee' THEN (
+          SELECT COALESCE(SUM(quantite), 0)
+          FROM commande_items
+          WHERE commande_id = c.id
+        )
+        ELSE 0
+      END
+    ), 0)
+  )
+  INTO v_kpis
+  FROM commandes c
+  WHERE (c.date_validation >= p_debut AND c.date_validation <= p_fin)
+    OR (c.date_validation IS NULL AND c.created_at >= p_debut AND c.created_at <= p_fin);
+
+  -- Calculer les ventes par produit pour la période
+  SELECT json_agg(ventes)
+  INTO v_ventes_produits
+  FROM (
+    SELECT json_build_object(
+      'produit_id', p.id,
+      'produit_nom', p.nom,
+      'categorie', p.categorie,
+      'quantite_vendue', COALESCE(SUM(ci.quantite), 0),
+      'revenu_total', COALESCE(SUM(ci.montant_ligne), 0),
+      'nombre_commandes', COUNT(DISTINCT c.id),
+      'prix_moyen', CASE 
+        WHEN SUM(ci.quantite) > 0 
+        THEN SUM(ci.montant_ligne) / SUM(ci.quantite)
+        ELSE 0
+      END
+    ) AS ventes
+    FROM produits p
+    LEFT JOIN commande_items ci ON ci.produit_id = p.id
+    LEFT JOIN commandes c ON c.id = ci.commande_id 
+      AND c.statut = 'validee'
+      AND c.date_validation >= p_debut
+      AND c.date_validation <= p_fin
+    GROUP BY p.id, p.nom, p.categorie
+  ) AS ventes_data;
+
+  -- Calculer l'évolution selon la granularité
+  IF p_granularite = 'heure' THEN
+    SELECT json_agg(evolution ORDER BY periode)
+    INTO v_evolution
+    FROM (
+      SELECT 
+        DATE_TRUNC('hour', c.date_validation) AS periode,
+        json_build_object(
+          'periode', DATE_TRUNC('hour', c.date_validation),
+          'chiffre_affaires', COALESCE(SUM(c.montant_total), 0),
+          'nombre_commandes', COUNT(*),
+          'panier_moyen', CASE 
+            WHEN COUNT(*) > 0 
+            THEN COALESCE(SUM(c.montant_total), 0) / COUNT(*)
+            ELSE 0
+          END
+        ) AS evolution
+      FROM commandes c
+      WHERE c.statut = 'validee'
+        AND c.date_validation >= p_debut
+        AND c.date_validation <= p_fin
+      GROUP BY DATE_TRUNC('hour', c.date_validation)
+    ) AS evolution_data;
+  ELSIF p_granularite = 'jour' THEN
+    SELECT json_agg(evolution ORDER BY periode)
+    INTO v_evolution
+    FROM (
+      SELECT 
+        DATE(c.date_validation) AS periode,
+        json_build_object(
+          'periode', DATE(c.date_validation),
+          'chiffre_affaires', COALESCE(SUM(c.montant_total), 0),
+          'nombre_commandes', COUNT(*),
+          'panier_moyen', CASE 
+            WHEN COUNT(*) > 0 
+            THEN COALESCE(SUM(c.montant_total), 0) / COUNT(*)
+            ELSE 0
+          END
+        ) AS evolution
+      FROM commandes c
+      WHERE c.statut = 'validee'
+        AND c.date_validation >= p_debut
+        AND c.date_validation <= p_fin
+      GROUP BY DATE(c.date_validation)
+    ) AS evolution_data;
+  ELSIF p_granularite = 'semaine' THEN
+    SELECT json_agg(evolution ORDER BY periode)
+    INTO v_evolution
+    FROM (
+      SELECT 
+        DATE_TRUNC('week', c.date_validation) AS periode,
+        json_build_object(
+          'periode', DATE_TRUNC('week', c.date_validation),
+          'chiffre_affaires', COALESCE(SUM(c.montant_total), 0),
+          'nombre_commandes', COUNT(*),
+          'panier_moyen', CASE 
+            WHEN COUNT(*) > 0 
+            THEN COALESCE(SUM(c.montant_total), 0) / COUNT(*)
+            ELSE 0
+          END
+        ) AS evolution
+      FROM commandes c
+      WHERE c.statut = 'validee'
+        AND c.date_validation >= p_debut
+        AND c.date_validation <= p_fin
+      GROUP BY DATE_TRUNC('week', c.date_validation)
+    ) AS evolution_data;
+  ELSE -- mois
+    SELECT json_agg(evolution ORDER BY periode)
+    INTO v_evolution
+    FROM (
+      SELECT 
+        DATE_TRUNC('month', c.date_validation) AS periode,
+        json_build_object(
+          'periode', DATE_TRUNC('month', c.date_validation),
+          'chiffre_affaires', COALESCE(SUM(c.montant_total), 0),
+          'nombre_commandes', COUNT(*),
+          'panier_moyen', CASE 
+            WHEN COUNT(*) > 0 
+            THEN COALESCE(SUM(c.montant_total), 0) / COUNT(*)
+            ELSE 0
+          END
+        ) AS evolution
+      FROM commandes c
+      WHERE c.statut = 'validee'
+        AND c.date_validation >= p_debut
+        AND c.date_validation <= p_fin
+      GROUP BY DATE_TRUNC('month', c.date_validation)
+    ) AS evolution_data;
+  END IF;
+
+  -- Construire le résultat final
+  v_result := json_build_object(
+    'periode', json_build_object(
+      'debut', p_debut,
+      'fin', p_fin,
+      'granularite', p_granularite
+    ),
+    'kpis', v_kpis,
+    'ventes_produits', COALESCE(v_ventes_produits, '[]'::json),
+    'evolution', COALESCE(v_evolution, '[]'::json)
+  );
+
+  RETURN v_result;
+END;
+"
+create_encaissement,"
+DECLARE
+  v_facture_montant_restant INTEGER;
+  v_encaissement_id UUID;
+BEGIN
+  -- Validate mode_paiement
+  IF p_mode_paiement NOT IN ('especes', 'mobile_money', 'carte_bancaire') THEN
+    RAISE EXCEPTION 'Invalid mode_paiement: %. Must be one of: especes, mobile_money, carte_bancaire', p_mode_paiement;
+  END IF;
+  
+  -- Validate montant > 0
+  IF p_montant <= 0 THEN
+    RAISE EXCEPTION 'Montant must be greater than 0';
+  END IF;
+  
+  -- Check if facture exists and get montant_restant
+  SELECT montant_restant INTO v_facture_montant_restant
+  FROM factures
+  WHERE factures.id = p_facture_id;
+  
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Facture not found: %', p_facture_id;
+  END IF;
+  
+  -- Check if montant doesn't exceed montant_restant
+  IF p_montant > v_facture_montant_restant THEN
+    RAISE EXCEPTION 'Montant (%) exceeds montant_restant (%) for facture %', 
+      p_montant, v_facture_montant_restant, p_facture_id;
+  END IF;
+  
+  -- Insert encaissement
+  INSERT INTO encaissements (
+    facture_id,
+    montant,
+    mode_paiement,
+    reference,
+    utilisateur_id
+  ) VALUES (
+    p_facture_id,
+    p_montant,
+    p_mode_paiement,
+    p_reference,
+    auth.uid()
+  )
+  RETURNING 
+    encaissements.id,
+    encaissements.facture_id,
+    encaissements.montant,
+    encaissements.mode_paiement,
+    encaissements.reference,
+    encaissements.utilisateur_id,
+    encaissements.date_encaissement
+  INTO 
+    v_encaissement_id,
+    p_facture_id,
+    p_montant,
+    p_mode_paiement,
+    p_reference,
+    id,
+    date_encaissement;
+  
+  -- Return the created encaissement
+  RETURN QUERY
+  SELECT 
+    v_encaissement_id,
+    p_facture_id,
+    p_montant,
+    p_mode_paiement,
+    p_reference,
+    auth.uid(),
+    NOW();
+END;
+"
+get_encaissements_stats,"
+BEGIN
+  RETURN QUERY
+  SELECT 
+    e.mode_paiement,
+    COUNT(*)::BIGINT as nombre_encaissements,
+    SUM(e.montant)::BIGINT as montant_total
+  FROM encaissements e
+  WHERE e.date_encaissement >= p_date_debut
+    AND e.date_encaissement <= p_date_fin
+  GROUP BY e.mode_paiement
+  ORDER BY montant_total DESC;
+END;
+"
+is_user_active,"
+DECLARE
+  user_active boolean;
+BEGIN
+  SELECT COALESCE(actif, FALSE) INTO user_active FROM public.profiles WHERE id = auth.uid();
+  RETURN user_active;
+END;
+"
+confirm_payment_and_extend_subscription,"
+DECLARE
+  v_current_date_fin TIMESTAMPTZ;
+  v_new_date_fin TIMESTAMPTZ;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = p_admin_utilisateur_id AND role = 'admin') THEN
+    RAISE EXCEPTION 'Only admins can confirm payments';
+  END IF;
+  SELECT date_fin INTO v_current_date_fin FROM etablissements WHERE id = p_etablissement_id;
+  IF v_current_date_fin IS NULL THEN
+    RAISE EXCEPTION 'Establishment not found';
+  END IF;
+  v_new_date_fin := v_current_date_fin + INTERVAL '12 months';
+  UPDATE etablissements SET date_fin = v_new_date_fin, statut_abonnement = 'actif', actif = true,
+    dernier_paiement_date = NOW(), dernier_paiement_confirme_par = p_admin_utilisateur_id, date_modification = NOW()
+  WHERE id = p_etablissement_id;
+  PERFORM log_audit_action('PAYMENT_CONFIRMED', 'etablissements', p_etablissement_id,
+    jsonb_build_object('previous_date_fin', v_current_date_fin, 'new_date_fin', v_new_date_fin,
+      'payment_date', NOW(), 'admin_utilisateur_id', p_admin_utilisateur_id), p_etablissement_id);
+END;
+"
+suspend_etablissement,"
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = p_admin_utilisateur_id AND role = 'admin') THEN
+    RAISE EXCEPTION 'Only admins can suspend establishments';
+  END IF;
+  UPDATE etablissements SET statut_abonnement = 'suspendu', actif = false, date_modification = NOW()
+  WHERE id = p_etablissement_id;
+  PERFORM log_audit_action('ESTABLISHMENT_SUSPENDED', 'etablissements', p_etablissement_id,
+    jsonb_build_object('reason', p_reason, 'admin_utilisateur_id', p_admin_utilisateur_id, 'suspended_at', NOW()), p_etablissement_id);
+END;
+"
+reactivate_etablissement,"
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = p_admin_utilisateur_id AND role = 'admin') THEN
+    RAISE EXCEPTION 'Only admins can reactivate establishments';
+  END IF;
+  UPDATE etablissements SET statut_abonnement = 'actif', actif = true, date_modification = NOW()
+  WHERE id = p_etablissement_id;
+  PERFORM log_audit_action('ESTABLISHMENT_REACTIVATED', 'etablissements', p_etablissement_id,
+    jsonb_build_object('admin_utilisateur_id', p_admin_utilisateur_id, 'reactivated_at', NOW()), p_etablissement_id);
+END;
+"
+generate_numero_ravitaillement,"
+DECLARE
+  next_num INTEGER;
+  date_prefix TEXT;
+BEGIN
+  date_prefix := 'RAV-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-';
+  SELECT COALESCE(MAX(CAST(SUBSTRING(numero_ravitaillement FROM '\\d+$') AS INTEGER)), 0) + 1
+  INTO next_num
+  FROM ravitaillements
+  WHERE numero_ravitaillement LIKE date_prefix || '%';
+  NEW.numero_ravitaillement := date_prefix || LPAD(next_num::TEXT, 3, '0');
+  RETURN NEW;
+END;
+"
+generate_numero_facture,"
+DECLARE
+  next_num INTEGER;
+  date_prefix TEXT;
+BEGIN
+  date_prefix := 'FACT-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-';
+  SELECT COALESCE(MAX(CAST(SUBSTRING(numero_facture FROM '\\d+$') AS INTEGER)), 0) + 1
+  INTO next_num
+  FROM factures
+  WHERE numero_facture LIKE date_prefix || '%';
+  NEW.numero_facture := date_prefix || LPAD(next_num::TEXT, 3, '0');
+  RETURN NEW;
+END;
+"
+calculate_commande_total,"
+DECLARE
+  total DECIMAL;
+BEGIN
+  SELECT COALESCE(SUM(prix_unitaire * quantite), 0)
+  INTO total
+  FROM commande_items
+  WHERE commande_id = p_commande_id;
+  RETURN total;
+END;
+"
+calculate_creances,"
+DECLARE
+  chiffre_affaires DECIMAL;
+  encaissements DECIMAL;
+BEGIN
+  SELECT COALESCE(SUM(montant_total), 0)
+  INTO chiffre_affaires
+  FROM commandes
+  WHERE statut = 'validee' AND date_validation BETWEEN p_debut AND p_fin;
+  
+  SELECT COALESCE(SUM(e.montant), 0)
+  INTO encaissements
+  FROM encaissements e
+  WHERE e.date_encaissement BETWEEN p_debut AND p_fin;
+  
+  RETURN chiffre_affaires - encaissements;
+END;
+"
+log_audit_action,"
+DECLARE
+  v_etablissement_id UUID;
+  v_utilisateur_id UUID;
+BEGIN
+  -- Get current user ID safely
+  v_utilisateur_id := auth.uid();
+  
+  -- Determine etablissement_id
+  IF p_etablissement_id IS NOT NULL THEN
+    v_etablissement_id := p_etablissement_id;
+  ELSIF v_utilisateur_id IS NOT NULL THEN
+    SELECT etablissement_id INTO v_etablissement_id
+    FROM public.profiles
+    WHERE id = v_utilisateur_id;
+  ELSE
+    v_etablissement_id := NULL;
+  END IF;
+  
+  -- Insert audit log entry
+  INSERT INTO public.audit_logs (
+    utilisateur_id,
+    action,
+    entite,
+    entite_id,
+    etablissement_id,
+    details_apres,
+    created_at
+  ) VALUES (
+    v_utilisateur_id,
+    p_action,
+    p_entite,
+    p_entite_id,
+    v_etablissement_id,
+    p_details,
+    NOW()
+  );
+EXCEPTION WHEN OTHERS THEN
+  -- Ne jamais bloquer une transaction à cause d'un log
+  RAISE WARNING 'Echec du log audit: %', SQLERRM;
+END;
+"
+check_stock_alerts,"
+BEGIN
+  RETURN QUERY
+  SELECT 
+    p.id AS produit_id,
+    p.nom AS nom_produit,
+    p.categorie,
+    s.quantite_disponible,
+    p.seuil_stock_minimum,
+    (s.quantite_disponible - p.seuil_stock_minimum) AS difference,
+    s.updated_at AS derniere_mise_a_jour
+  FROM produits p
+  INNER JOIN stock s ON p.id = s.produit_id
+  WHERE p.actif = true
+    AND s.quantite_disponible <= p.seuil_stock_minimum
+  ORDER BY (s.quantite_disponible - p.seuil_stock_minimum) ASC, p.nom ASC;
+END;
+"
+audit_trigger_function,"
+DECLARE
+  v_action TEXT;
+  v_entite TEXT;
+  v_entite_id TEXT;
+  v_details_avant JSONB;
+  v_details_apres JSONB;
+  v_etablissement_id UUID;
+  v_user_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Récupérer l'établissement sans faire planter la fonction
+  IF v_user_id IS NOT NULL THEN
+    BEGIN
+      SELECT etablissement_id INTO v_etablissement_id
+      FROM public.profiles WHERE id = v_user_id;
+    EXCEPTION WHEN OTHERS THEN
+      v_etablissement_id := NULL;
+    END;
+  ELSE
+    v_etablissement_id := NULL;
+  END IF;
+
+  v_entite := TG_TABLE_NAME; -- FIX: Assigner le nom de la table (obligatoire)
+  
+  IF (TG_OP = 'INSERT') THEN
+    v_action := TG_TABLE_NAME || '.created';
+    v_details_avant := NULL;
+    v_details_apres := to_jsonb(NEW);
+    v_entite_id := COALESCE(NEW.id::TEXT, 'unknown');
+  ELSIF (TG_OP = 'UPDATE') THEN
+    v_action := TG_TABLE_NAME || '.updated';
+    v_details_avant := to_jsonb(OLD);
+    v_details_apres := to_jsonb(NEW);
+    v_entite_id := COALESCE(NEW.id::TEXT, OLD.id::TEXT, 'unknown');
+  ELSIF (TG_OP = 'DELETE') THEN
+    v_action := TG_TABLE_NAME || '.deleted';
+    v_details_avant := to_jsonb(OLD);
+    v_details_apres := '{}'::jsonb; -- FIX: Ne jamais laisser NULL
+    v_entite_id := COALESCE(OLD.id::TEXT, 'unknown');
+  END IF;
+  
+  -- Insertion sécurisée avec les bons noms de colonnes
+  INSERT INTO public.audit_logs (
+    utilisateur_id,
+    action,
+    entite,
+    entite_id,
+    etablissement_id,
+    details_avant,
+    details_apres,
+    date_creation -- FIX: Utiliser date_creation (pas created_at)
+  ) VALUES (
+    v_user_id,
+    v_action,
+    v_entite,
+    v_entite_id,
+    v_etablissement_id,
+    v_details_avant,
+    v_details_apres,
+    NOW()
+  );
+  
+  IF (TG_OP = 'DELETE') THEN RETURN OLD; ELSE RETURN NEW; END IF;
+EXCEPTION WHEN OTHERS THEN
+  -- En cas d'erreur, on log mais on ne bloque pas la transaction
+  RAISE WARNING 'Audit log failed: %', SQLERRM;
+  IF (TG_OP = 'DELETE') THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END;
+"

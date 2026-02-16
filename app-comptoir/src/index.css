@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+@theme {
+  /* Brand Colors - Electric Blue/Indigo vibe */
+  --color-primary: #3B82F6; /* Blue 500 */
+  --color-primary-foreground: #FFFFFF;
+  
+  /* Backgrounds - Deep Space / Midnight */
+  --color-background-light: #F8FAFC; /* Slate 50 */
+  --color-background-dark: #020617; /* Slate 950 - Very Deep Navy */
+  
+  /* Semantics - Neon/Vibrant */
+  --color-semantic-green: #10B981; /* Emerald 500 */
+  --color-semantic-red: #EF4444; /* Red 500 */
+  --color-semantic-amber: #F59E0B; /* Amber 500 */
+  --color-semantic-blue: #3B82F6;
+  --color-semantic-purple: #8B5CF6;
+  --color-semantic-pink: #EC4899;
+  
+  /* Remapping Neutral to Slate (Blue-Grey) for Modern Tech Look */
+  --color-neutral-50: #F8FAFC;
+  --color-neutral-100: #F1F5F9;
+  --color-neutral-200: #E2E8F0;
+  --color-neutral-300: #CBD5E1;
+  --color-neutral-400: #94A3B8;
+  --color-neutral-500: #64748B;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1E293B; /* Slate 800 - Cards/Sidebar */
+  --color-neutral-900: #0F172A; /* Slate 900 */
+  --color-neutral-950: #020617;
+
+  /* Legacy Inventory Colors - mapped to new theme */
+  --color-inventory-primary: #3B82F6;
+  --color-inventory-primary-dark: #1E40AF;
+  --color-inventory-accent: #F59E0B;
+  --color-inventory-surface-dark: #1E293B;
+  --color-inventory-border-dark: #334155;
+
+  /* Fonts */
+  --font-display: "Plus Jakarta Sans", "Space Grotesk", sans-serif;
+  --font-body: "Noto Sans", sans-serif;
+  
+  /* Radius */
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+}
+
+@layer base {
+  body {
+    @apply antialiased text-neutral-900 bg-background-light dark:text-neutral-50 dark:bg-background-dark;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
+
+/* Custom Scrollbar */
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+@keyframes draw {
+    to { stroke-dashoffset: 0; }
+}
+
+.animate-path {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+    animation: draw 2s ease-out forwards;
+}
