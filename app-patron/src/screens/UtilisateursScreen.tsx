@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
-import { format } from 'date-fns';
 import { UserPlus, Search, Edit, UserX, X } from 'lucide-react';
 import type { Profile } from '../types/database.types';
 

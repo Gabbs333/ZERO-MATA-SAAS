@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
-import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import { formatMontant } from '../utils/format';
 import { format } from 'date-fns';
@@ -11,7 +10,7 @@ export function TransactionsScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'especes' | 'carte' | 'mobile_money'>('all');
 
-  const { data: transactions, isLoading } = useSupabaseQuery(
+  const { data: transactions, isLoading, refetch } = useSupabaseQuery(
     ['transactions', profile?.etablissement_id],
     async (supabaseClient) => {
       if (!profile?.etablissement_id) return { data: [], error: null };

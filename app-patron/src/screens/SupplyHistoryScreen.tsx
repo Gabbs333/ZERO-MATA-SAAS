@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
-import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import { formatMontant } from '../utils/format';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { Search, Package, FileText } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 interface SupplyHistoryItem {
   id: string;

@@ -9,8 +9,7 @@ import {
   Plus, 
   Package, 
   Wine, 
-  Utensils, 
-  History
+  Utensils
 } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
