@@ -93,18 +93,8 @@ export default function Layout({ children }: LayoutProps) {
           {/* Logo area glow */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
           
-          <div className="flex items-center gap-3 relative z-10">
-            <div className="size-10 rounded-xl bg-white shadow-sm flex items-center justify-center p-1.5 border border-neutral-100 dark:border-white/5">
-                <img src={logoIcon} alt="ZM" className="w-full h-full object-contain" />
-            </div>
-            <div className="flex flex-col">
-                <span className="font-display font-black text-xl tracking-tight text-neutral-900 dark:text-white leading-none">
-                    ZERO-MATA
-                </span>
-                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest leading-none mt-0.5">
-                    Comptoir
-                </span>
-            </div>
+          <div className="h-14 w-auto flex items-center justify-start relative z-10">
+            <img src={logoFull} alt="ZERO-MATA" className="h-full w-auto object-contain" />
           </div>
           <button 
             onClick={() => setIsSidebarOpen(false)}

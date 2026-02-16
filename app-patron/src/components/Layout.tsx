@@ -163,18 +163,8 @@ export function Layout({ children }: LayoutProps) {
       <div className={`hidden md:flex fixed top-0 left-0 bottom-0 ${isCollapsed ? 'w-20' : 'w-64'} flex-col bg-white dark:bg-dark-card border-r border-neutral-200 dark:border-white/5 z-50 transition-all duration-300`}>
           <div className={`p-6 border-b border-neutral-200 dark:border-white/5 relative flex items-center ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}>
              <div className={`flex items-center gap-3 ${isCollapsed ? 'hidden' : 'flex'}`}>
-                <div className="flex items-center gap-3">
-                   <div className="size-10 rounded-xl bg-white shadow-sm flex items-center justify-center p-1.5 border border-neutral-100 dark:border-white/5">
-                      <img src={logoIcon} alt="ZM" className="w-full h-full object-contain" />
-                   </div>
-                   <div className="flex flex-col">
-                      <span className="font-display font-black text-xl tracking-tight text-neutral-900 dark:text-white leading-none">
-                        ZERO-MATA
-                      </span>
-                      <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest leading-none mt-0.5">
-                        Patron
-                      </span>
-                   </div>
+                <div className="h-14 w-auto flex items-center justify-start">
+                   <img src={logoFull} alt="ZERO-MATA" className="h-full w-auto object-contain" />
                 </div>
              </div>
              
