@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useEtablissements, useExpiringEtablissements } from '../hooks/useSupabaseQuery';
+import { useSuspendEtablissement, useReactivateEtablissement, useDeleteEtablissement } from '../hooks/useSupabaseMutation';
+import { useAuthStore } from '../store/authStore';
 import { format } from '../utils/format';
-import { CreditCard, AlertTriangle, CheckCircle, XCircle, Search, RefreshCw, Clock, Filter, Building2 } from 'lucide-react';
+import { CreditCard, AlertTriangle, CheckCircle, XCircle, Search, RefreshCw, Clock, Filter, Building2, Trash2, PauseCircle, PlayCircle } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -16,11 +18,44 @@ export default function SubscriptionScreen() {
   const { data: allEtablissements, isPending: loadingAll } = useEtablissements();
   const { data: expiringEtablissements, isPending: loadingExpiring } = useExpiringEtablissements(30);
 
+  const { mutate: suspendEtablissement } = useSuspendEtablissement();
+  const { mutate: reactivateEtablissement } = useReactivateEtablissement();
+  const { mutate: deleteEtablissement } = useDeleteEtablissement();
+  const user = useAuthStore((state) => state.user);
+
   const filteredEtablissements = allEtablissements?.filter((etab: any) => {
     const matchesSearch = etab.nom.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || etab.statut_abonnement === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const handleSuspend = (id: string, nom: string) => {
+    if (window.confirm(`Êtes-vous sûr de vouloir suspendre l'établissement "${nom}" ? L'accès sera bloqué pour tous les utilisateurs.`)) {
+      suspendEtablissement({
+        etablissementId: id,
+        adminUserId: user?.id,
+        reason: 'Suspension manuelle par admin'
+      });
+    }
+  };
+
+  const handleReactivate = (id: string, nom: string) => {
+    if (window.confirm(`Êtes-vous sûr de vouloir réactiver l'établissement "${nom}" ?`)) {
+      reactivateEtablissement({
+        etablissementId: id,
+        adminUserId: user?.id
+      });
+    }
+  };
+
+  const handleDelete = (id: string, nom: string) => {
+    if (window.confirm(`ATTENTION : Êtes-vous sûr de vouloir SUPPRIMER DÉFINITIVEMENT l'établissement "${nom}" ? Cette action est irréversible et supprimera toutes les données associées.`)) {
+      deleteEtablissement({
+        etablissementId: id,
+        adminUserId: user?.id
+      });
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -196,9 +231,37 @@ export default function SubscriptionScreen() {
                     {format.dateShort(etab.date_fin)}
                   </td>
                   <td className="px-6 py-5 whitespace-nowrap text-right">
-                    <button className="text-neutral-400 hover:text-primary dark:hover:text-white p-2 rounded-lg hover:bg-primary/10 dark:hover:bg-white/10 transition-all transform hover:scale-110" title="Renouveler">
-                      <RefreshCw size={18} />
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button className="text-neutral-400 hover:text-primary dark:hover:text-white p-2 rounded-lg hover:bg-primary/10 dark:hover:bg-white/10 transition-all transform hover:scale-110" title="Renouveler">
+                        <RefreshCw size={18} />
+                      </button>
+                      
+                      {etab.statut_abonnement === 'suspendu' ? (
+                        <button 
+                          onClick={() => handleReactivate(etab.id, etab.nom)}
+                          className="text-neutral-400 hover:text-emerald-500 dark:hover:text-emerald-400 p-2 rounded-lg hover:bg-emerald-500/10 dark:hover:bg-emerald-500/10 transition-all transform hover:scale-110" 
+                          title="Réactiver"
+                        >
+                          <PlayCircle size={18} />
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => handleSuspend(etab.id, etab.nom)}
+                          className="text-neutral-400 hover:text-amber-500 dark:hover:text-amber-400 p-2 rounded-lg hover:bg-amber-500/10 dark:hover:bg-amber-500/10 transition-all transform hover:scale-110" 
+                          title="Suspendre"
+                        >
+                          <PauseCircle size={18} />
+                        </button>
+                      )}
+
+                      <button 
+                        onClick={() => handleDelete(etab.id, etab.nom)}
+                        className="text-neutral-400 hover:text-rose-500 dark:hover:text-rose-400 p-2 rounded-lg hover:bg-rose-500/10 dark:hover:bg-rose-500/10 transition-all transform hover:scale-110" 
+                        title="Supprimer"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

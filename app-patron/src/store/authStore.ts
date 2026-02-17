@@ -49,10 +49,12 @@ export const useAuthStore = create<AuthState>((set) => ({
               .eq('id', profile.etablissement_id)
               .single();
             
-            if (etabError) {
+            if (etabError || !etablissement) {
                 console.error('Error fetching establishment:', etabError);
-                // On continue quand même si erreur de récupération (robustesse)
-            } else if (!etablissement?.actif || etablissement?.statut_abonnement !== 'actif') {
+                await supabase.auth.signOut();
+                set({ user: null, profile: null, loading: false });
+                throw new Error('Votre établissement est introuvable ou a été supprimé. Contactez l\'administrateur.');
+            } else if (!etablissement.actif || etablissement.statut_abonnement !== 'actif') {
               await supabase.auth.signOut();
               set({ user: null, profile: null, loading: false });
               throw new Error('Votre abonnement a expiré ou votre établissement est suspendu. Contactez l\'administrateur.');
@@ -112,9 +114,11 @@ export const useAuthStore = create<AuthState>((set) => ({
             .eq('id', profile.etablissement_id)
             .single();
             
-          if (etabError) {
+          if (etabError || !etablissement) {
              console.error('Error fetching establishment during sign in:', etabError);
-          } else if (!etablissement?.actif || etablissement?.statut_abonnement !== 'actif') {
+             await supabase.auth.signOut();
+             throw new Error('Votre établissement est introuvable ou a été supprimé. Contactez l\'administrateur.');
+          } else if (!etablissement.actif || etablissement.statut_abonnement !== 'actif') {
             await supabase.auth.signOut();
             throw new Error('Votre abonnement a expiré ou votre établissement est suspendu. Contactez l\'administrateur.');
           }

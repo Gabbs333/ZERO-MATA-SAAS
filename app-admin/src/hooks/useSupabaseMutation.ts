@@ -121,7 +121,21 @@ export function useSuspendEtablissement(
         p_reason: params.reason,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.warn('RPC suspend_etablissement failed, trying direct update', error);
+        const { data: updateData, error: updateError } = await supabase
+          .from('etablissements')
+          .update({
+            statut_abonnement: 'suspendu',
+            actif: false
+          })
+          .eq('id', params.etablissementId)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        return updateData;
+      }
       return data;
     },
     onSuccess: (_, variables) => {
@@ -152,12 +166,68 @@ export function useReactivateEtablissement(
         p_admin_utilisateur_id: params.adminUserId,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.warn('RPC reactivate_etablissement failed, trying direct update', error);
+        const { data: updateData, error: updateError } = await supabase
+          .from('etablissements')
+          .update({
+            statut_abonnement: 'actif',
+            actif: true
+          })
+          .eq('id', params.etablissementId)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        return updateData;
+      }
       return data;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['etablissements'] });
       queryClient.invalidateQueries({ queryKey: ['etablissements', variables.etablissementId] });
+      queryClient.invalidateQueries({ queryKey: ['statistics'] });
+      queryClient.invalidateQueries({ queryKey: ['admin_actions_log'] });
+    },
+    ...options,
+  });
+}
+
+// Hook pour supprimer un établissement
+interface DeleteEtablissementParams {
+  etablissementId: string;
+  adminUserId: string;
+}
+
+export function useDeleteEtablissement(
+  options?: Omit<UseMutationOptions<any, Error, DeleteEtablissementParams>, 'mutationFn'>
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<any, Error, DeleteEtablissementParams>({
+    mutationFn: async (params) => {
+      // On essaie d'abord via RPC pour gérer la suppression en cascade proprement
+      const { data, error } = await supabase.rpc('delete_etablissement', {
+        p_etablissement_id: params.etablissementId,
+        p_admin_utilisateur_id: params.adminUserId,
+      });
+
+      if (error) {
+        // Fallback: suppression directe si la RPC n'existe pas
+        // Attention: cela peut échouer si les contraintes de clé étrangère ne sont pas en cascade
+        console.warn('RPC delete_etablissement failed, trying direct delete', error);
+        const { error: deleteError } = await supabase
+          .from('etablissements')
+          .delete()
+          .eq('id', params.etablissementId);
+        
+        if (deleteError) throw deleteError;
+        return true;
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['etablissements'] });
       queryClient.invalidateQueries({ queryKey: ['statistics'] });
       queryClient.invalidateQueries({ queryKey: ['admin_actions_log'] });
     },

@@ -93,13 +93,21 @@ export const useAuthStore = create<AuthState>((set) => ({
           const profile = fullProfile;
 
           // Vérifier le statut de l'établissement
-          if (profile?.etablissement) {
+          if (profile?.etablissement_id) {
             const etablissement = profile.etablissement;
 
-            if (!etablissement?.actif || etablissement?.statut_abonnement !== 'actif') {
-              // Instead of signing out immediately which causes loops on error
-              // just set a flag or handle in UI
+            if (!etablissement) {
+              console.error('Establishment not found for ID:', profile.etablissement_id);
+              await supabase.auth.signOut();
+              set({ user: null, session: null, profile: null, loading: false, error: 'Votre établissement est introuvable ou a été supprimé.' });
+              return;
+            }
+
+            if (!etablissement.actif || etablissement.statut_abonnement !== 'actif') {
               console.warn('Establishment inactive or subscription expired');
+              await supabase.auth.signOut();
+              set({ user: null, session: null, profile: null, loading: false, error: 'Abonnement expiré ou suspendu' });
+              return;
             }
           }
 
@@ -216,10 +224,15 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       // Vérifier le statut de l'établissement
-      if (profile?.etablissement) {
+      if (profile?.etablissement_id) {
         const etablissement = profile.etablissement;
 
-        if (!etablissement?.actif || etablissement?.statut_abonnement !== 'actif') {
+        if (!etablissement) {
+          await supabase.auth.signOut();
+          throw new Error('Votre établissement est introuvable ou a été supprimé. Contactez l\'administrateur.');
+        }
+
+        if (!etablissement.actif || etablissement.statut_abonnement !== 'actif') {
           await supabase.auth.signOut();
           throw new Error('Votre abonnement a expiré ou votre établissement est suspendu. Contactez l\'administrateur.');
         }
