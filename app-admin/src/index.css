@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Brand Colors - Electric Blue/Indigo vibe */
   --color-primary: #3B82F6; /* Blue 500 */
