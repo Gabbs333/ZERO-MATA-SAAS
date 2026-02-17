@@ -106,6 +106,8 @@ export default function EtablissementDetailScreen() {
         .order('date_creation', { ascending: false })
   );
 
+  const patron = users?.find(u => u.role === 'patron' || u.role === 'admin_etablissement');
+
   // Fetch recent audit logs
   const { data: auditLogs, isPending: logsLoading } = useSupabaseQuery<AuditLog[]>(
     ['audit_logs', 'etablissement', id!],
