@@ -220,7 +220,9 @@ export default function Layout({ children }: LayoutProps) {
               </div>
            </div>
 
-          <div className="lg:hidden w-10"></div> {/* Spacer for alignment on mobile */}
+          <div className="lg:hidden">
+            <ThemeToggle />
+          </div>
         </header>
 
         {/* Page Content */}

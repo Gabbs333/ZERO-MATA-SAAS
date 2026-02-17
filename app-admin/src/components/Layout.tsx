@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import ThemeToggle from './ThemeToggle';
 import { 
   LayoutDashboard, 
   Building2, 
@@ -119,8 +120,12 @@ export default function Layout({ children }: LayoutProps) {
         </nav>
         
         {/* Sidebar Footer / User Mini Profile */}
-        <div className="p-4 border-t border-neutral-200/50 dark:border-white/5 bg-neutral-50/50 dark:bg-black/20 backdrop-blur-sm flex-shrink-0">
-             <div className="flex items-center gap-3 px-2">
+        <div className="p-4 border-t border-neutral-200/50 dark:border-white/5 bg-neutral-50/50 dark:bg-black/20 backdrop-blur-sm flex-shrink-0 space-y-3">
+             <div className="flex items-center justify-between px-2">
+                <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Mode</span>
+                <ThemeToggle />
+             </div>
+             <div className="flex items-center gap-3 px-2 pt-2 border-t border-neutral-200/50 dark:border-white/5">
                 <div className="h-10 w-10 rounded-full bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-600 p-[1px] flex-shrink-0">
                    <div className="h-full w-full rounded-full bg-white dark:bg-neutral-800 flex items-center justify-center">
                       <span className="font-bold text-neutral-700 dark:text-neutral-300 text-sm">
@@ -158,6 +163,10 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           <div className="flex items-center space-x-6">
+            <div className="hidden lg:block">
+              <ThemeToggle />
+            </div>
+
             <div className="text-right hidden sm:block">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-100/50 dark:bg-white/5 border border-neutral-200 dark:border-white/10">
                 <div className="w-2 h-2 rounded-full bg-semantic-green animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
