@@ -21,7 +21,6 @@ import {
   format, 
   subDays, 
   eachDayOfInterval, 
-  isSameDay, 
   parseISO,
   startOfDay,
   endOfDay
@@ -34,13 +33,6 @@ import {
   TrendingUp, 
   AlertTriangle 
 } from 'lucide-react';
-
-interface AnalyticsData {
-  dateFormatted: string;
-  ca: number;
-  encaissements: number;
-  marge_brute: number;
-}
 
 export function FinancialDashboardScreen() {
   const profile = useAuthStore((state) => state.profile);

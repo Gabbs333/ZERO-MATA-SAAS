@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../config/supabase';
 import { X, Save, Target } from 'lucide-react';
-import { useAuthStore } from '../../store/authStore';
 
 interface StockThresholdModalProps {
   isOpen: boolean;
@@ -22,7 +21,6 @@ export function StockThresholdModal({
 }: StockThresholdModalProps) {
   const [threshold, setThreshold] = useState(currentThreshold.toString());
   const [loading, setLoading] = useState(false);
-  const profile = useAuthStore((state) => state.profile);
 
   useEffect(() => {
     setThreshold(currentThreshold.toString());

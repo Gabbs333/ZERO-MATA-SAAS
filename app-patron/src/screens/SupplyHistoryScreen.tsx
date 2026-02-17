@@ -3,7 +3,8 @@ import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { useAuthStore } from '../store/authStore';
 import { formatMontant } from '../utils/format';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { Search } from 'lucide-react';
+import { fr } from 'date-fns/locale';
+import { Search, Package, FileText } from 'lucide-react';
 
 interface SupplyHistoryItem {
   id: string;

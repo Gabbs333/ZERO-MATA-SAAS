@@ -25,16 +25,12 @@ import {
   Package, 
   CreditCard, 
   Wallet, 
-  Banknote, 
   AlertTriangle,
   TrendingUp,
   Clock,
-  CheckCircle,
   XCircle,
   Eye,
-  Calendar,
-  ChevronDown,
-  Filter
+  Calendar
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -86,24 +82,24 @@ export function DashboardScreen() {
   }, [period]);
 
   // Fetch establishment subscription status
-  const { data: etablissement } = useSupabaseQuery(
-    ['etablissement', profile?.etablissement_id],
-    async () => {
-      if (!profile?.etablissement_id) return { data: null, error: null };
-      return supabase
-        .from('etablissements')
-        .select('*')
-        .eq('id', profile.etablissement_id)
-        .single()
-        .then(({ data, error }) => ({ data, error }));
-    },
-    { enabled: !!profile?.etablissement_id }
-  );
+  // const { data: etablissement } = useSupabaseQuery(
+  //   ['etablissement', profile?.etablissement_id],
+  //   async () => {
+  //     if (!profile?.etablissement_id) return { data: null, error: null };
+  //     return supabase
+  //       .from('etablissements')
+  //       .select('*')
+  //       .eq('id', profile.etablissement_id)
+  //       .single()
+  //       .then(({ data, error }) => ({ data, error }));
+  //   },
+  //   { enabled: !!profile?.etablissement_id }
+  // );
 
   // Calculate days until expiration
-  const daysUntilExpiration = etablissement?.date_fin 
-    ? differenceInDays(new Date(etablissement.date_fin), new Date())
-    : null;
+  // const daysUntilExpiration = etablissement?.date_fin 
+  //   ? differenceInDays(new Date(etablissement.date_fin), new Date())
+  //   : null;
 
   // Fetch Commandes with Items (Relational Query)
   const { data: commandesData, isLoading: cmdLoading } = useSupabaseQuery(
@@ -235,7 +231,7 @@ export function DashboardScreen() {
       };
     });
   }, [commandesData, encaissementsData, dateRange]);
-  const chartLoading = cmdLoading || encLoading;
+  // const chartLoading = cmdLoading || encLoading;
 
   // Client-side Top Products Calculation
   const advancedAnalytics = useMemo(() => {
@@ -285,7 +281,7 @@ export function DashboardScreen() {
       pourcentage_total: total > 0 ? Math.round((montant / total) * 100) : 0
     }));
   }, [encaissementsData]);
-  const paymentLoading = encLoading;
+  // const paymentLoading = encLoading;
 
   // Fetch current debt for the period
   const { data: totalDebt, isLoading: debtLoading } = useSupabaseQuery(
@@ -805,7 +801,7 @@ export function DashboardScreen() {
                         paddingAngle={5}
                         dataKey="montant_total"
                       >
-                        {paymentModes.map((entry: any, index: number) => (
+                        {paymentModes.map((_: any, index: number) => (
                           <Cell 
                             key={`cell-${index}`} 
                             fill={[ '#3B82F6', '#10B981', '#F59E0B', '#EF4444' ][index % 4]} 

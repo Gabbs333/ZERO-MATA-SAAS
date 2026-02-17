@@ -15,7 +15,6 @@ import {
   Archive, 
   ArchiveRestore 
 } from 'lucide-react';
-import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 type ProductFormData = Omit<Produit, 'id' | 'etablissement_id' | 'date_creation' | 'date_modification'>;
@@ -38,7 +37,7 @@ export function ProduitsScreen() {
   const [editingProduct, setEditingProduct] = useState<Produit | null>(null);
   const [formData, setFormData] = useState<ProductFormData>(INITIAL_FORM_DATA);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
 
   const { data: produits, isPending: isLoading, refetch } = useSupabaseQuery<Produit[]>(
     ['produits', profile?.etablissement_id],

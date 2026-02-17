@@ -10,7 +10,7 @@ export function TransactionsScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'especes' | 'carte' | 'mobile_money'>('all');
 
-  const { data: transactions, isLoading, refetch } = useSupabaseQuery(
+  const { data: transactions, isLoading } = useSupabaseQuery(
     ['transactions', profile?.etablissement_id],
     async (supabaseClient) => {
       if (!profile?.etablissement_id) return { data: [], error: null };

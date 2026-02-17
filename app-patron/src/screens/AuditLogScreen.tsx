@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';

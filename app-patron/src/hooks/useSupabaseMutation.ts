@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, UseMutationOptions } from '@tanstack/react-query';
 import { supabase } from '../config/supabase';
-import type { Produit, Ravitaillement } from '../types/database.types';
+import type { Produit } from '../types/database.types';
 
 // Hook pour créer un produit
 export function useCreateProduit(

@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
-import { formatMontant } from '../utils/format';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { BarChart3, Download, Table } from 'lucide-react';
 
@@ -14,10 +13,9 @@ export function RapportsScreen() {
   const profile = useAuthStore((state) => state.profile);
   const [reportType, setReportType] = useState<ReportType>('ventes');
   const [period, setPeriod] = useState<PeriodType>('mois');
-  // const [customDate, setCustomDate] = useState<Date>(new Date());
 
   // Queries based on report type
-  const { data: reportData, isLoading } = useSupabaseQuery(
+  const { isLoading } = useSupabaseQuery(
     ['reports', reportType, period, profile?.etablissement_id],
     async () => {
       if (!profile?.etablissement_id) return { data: null, error: null };

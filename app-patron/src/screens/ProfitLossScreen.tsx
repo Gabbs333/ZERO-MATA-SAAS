@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -26,7 +26,15 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { ChevronLeft, ChevronRight, Package, AlertTriangle, TrendingUp, ShoppingCart, Layers } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Package,
+  AlertTriangle,
+  TrendingUp,
+  ShoppingCart,
+  Layers,
+} from 'lucide-react';
 
 type PeriodType = 'month' | 'year';
 
@@ -433,7 +441,7 @@ export function ProfitLossScreen() {
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
-                                    {metrics.stockDistribution.map((entry, index) => (
+                                    {metrics.stockDistribution.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>

@@ -1,5 +1,5 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Bell, AlertTriangle, X, Package, CheckCircle2 } from 'lucide-react';
+import { useRef, useState, useEffect } from 'react';
+import { Bell, Package, CheckCircle2 } from 'lucide-react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -26,39 +26,16 @@ export function NotificationsPopover() {
   }, []);
 
   // Fetch low stock alerts
-  const { data: lowStocks } = useSupabaseQuery(
-    ['low_stocks_notifications', profile?.etablissement_id],
-    async () => {
-      if (!profile?.etablissement_id) return { data: [], error: null };
-      
-      const { data, error } = await supabase
-        .from('stocks')
-        .select(`
-          id,
-          quantite_actuelle,
-          seuil_alerte,
-          produits (
-            nom,
-            categorie
-          )
-        `)
-        .eq('etablissement_id', profile.etablissement_id)
-        .lte('quantite_actuelle', supabase.raw('seuil_alerte')) // This might need raw query or just fetch all and filter if lte col comparison isn't supported directly easily
-        .order('quantite_actuelle', { ascending: true });
-        
-        // Note: supabase .lte('col1', 'col2') compares col1 to string 'col2', not column value. 
-        // We might need to fetch and filter in JS or use rpc if performance is key.
-        // For now, let's fetch stocks and filter in JS to be safe and quick.
-      
-      return { data: [], error: null }; // Placeholder to override with JS filter approach below
-    },
-    { enabled: false } // We'll use a better query below
-  );
+  // const { data: lowStocks } = useSupabaseQuery(
+  //   ['low_stocks_notifications', profile?.etablissement_id],
+  //   async () => {
+  //     if (!profile?.etablissement_id) return { data: [], error: null };
+  //     return { data: [], error: null }; 
+  //   },
+  //   { enabled: false }
+  // );
 
   // Real implementation for fetching low stocks
-  // Since we can't easily compare two columns in standard postgrest-js .filter() without raw RPC or specific syntax that might be tricky,
-  // we will fetch all stocks (or maybe just check the ones we already have in cache if possible, but let's do a fresh fetch)
-  // Actually, let's just fetch all stocks and filter. It's safer.
   const { data: alerts, isLoading } = useSupabaseQuery(
     ['notifications_alerts', profile?.etablissement_id],
     async () => {
@@ -101,7 +78,7 @@ export function NotificationsPopover() {
         },
         () => {
           // Invalidate query to refetch fresh data immediately
-          queryClient.invalidateQueries(['notifications_alerts', profile.etablissement_id]);
+          queryClient.invalidateQueries({ queryKey: ['notifications_alerts', profile.etablissement_id] });
         }
       )
       .subscribe();
