@@ -161,7 +161,7 @@ export default function UserListScreen() {
                     )}
                   </td>
                   <td className="px-6 py-5 whitespace-nowrap text-sm text-neutral-500 dark:text-neutral-400">
-                    {new Date(user.created_at).toLocaleDateString('fr-FR', {
+                    {new Date(user.date_creation || user.created_at).toLocaleDateString('fr-FR', {
                       day: 'numeric',
                       month: 'long',
                       year: 'numeric'
