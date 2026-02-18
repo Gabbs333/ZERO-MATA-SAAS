@@ -22,6 +22,29 @@ export function useValidateCommande(
          throw new Error(data.error || 'Erreur lors de la validation (RPC)');
       }
       
+      // If success, patch mouvements_stock (Workaround for potential missing etablissement_id in RPC)
+      if (!error) {
+        try {
+            // Fetch command to get etablissement_id
+            const { data: cmd } = await supabase
+                .from('commandes')
+                .select('etablissement_id')
+                .eq('id', commandeId)
+                .single();
+            
+            if (cmd?.etablissement_id) {
+                // Update movements created by RPC if they are missing etablissement_id
+                await supabase
+                    .from('mouvements_stock')
+                    .update({ etablissement_id: cmd.etablissement_id })
+                    .eq('reference', commandeId)
+                    .is('etablissement_id', null);
+            }
+        } catch (e) {
+            console.warn('Failed to patch mouvements_stock', e);
+        }
+      }
+
       if (error) {
         console.log('Using manual validation flow (RPC failed)...', error.message);
         

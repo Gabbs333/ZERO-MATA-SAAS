@@ -36,6 +36,7 @@ export function ProduitsScreen() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Produit | null>(null);
   const [formData, setFormData] = useState<ProductFormData>(INITIAL_FORM_DATA);
+  const [initialStock, setInitialStock] = useState<number | ''>(''); // State for initial stock
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error] = useState<string | null>(null);
 
@@ -63,9 +64,11 @@ export function ProduitsScreen() {
         prix_achat: product.prix_achat || 0,
         actif: product.actif
       });
+      setInitialStock('');
     } else {
       setEditingProduct(null);
       setFormData(INITIAL_FORM_DATA);
+      setInitialStock('');
     }
     setIsModalOpen(true);
   };
@@ -74,6 +77,7 @@ export function ProduitsScreen() {
     setIsModalOpen(false);
     setEditingProduct(null);
     setFormData(INITIAL_FORM_DATA);
+    setInitialStock('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -92,14 +96,36 @@ export function ProduitsScreen() {
           .eq('id', editingProduct.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('produits')
           .insert({
             ...formData,
             etablissement_id: profile.etablissement_id,
             date_creation: new Date().toISOString()
-          });
+          })
+          .select('id')
+          .single();
+        
         if (error) throw error;
+
+        // Add initial stock if provided
+        if (initialStock !== '' && data?.id) {
+            const { error: stockError } = await supabase
+                .from('stocks')
+                .insert({
+                    produit_id: data.id,
+                    etablissement_id: profile.etablissement_id,
+                    quantite_actuelle: Number(initialStock),
+                    seuil_alerte: 10, // Default alert threshold
+                    date_derniere_maj: new Date().toISOString()
+                });
+            
+            if (stockError) {
+                console.error('Error creating initial stock:', stockError);
+                // We don't throw here to avoid failing the product creation, 
+                // but we should probably alert the user or log it.
+            }
+        }
       }
       refetch();
       handleCloseModal();
@@ -364,6 +390,22 @@ export function ProduitsScreen() {
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 text-sm font-medium">XAF</span>
                   </div>
                 </div>
+
+                {!editingProduct && (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
+                      Stock Initial <span className="text-neutral-400 font-normal">(Optionnel)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={initialStock}
+                      onChange={e => setInitialStock(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      placeholder="Quantité initiale en stock"
+                      className="w-full px-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="pt-4 flex gap-3">

@@ -12,6 +12,8 @@ interface CreateCommandeParams {
   items: CreateCommandeItem[];
 }
 
+import { useAuthStore } from '../store/authStore';
+
 export function useCreateCommande(
   options?: Omit<UseMutationOptions<any, Error, CreateCommandeParams>, 'mutationFn'>
 ) {
@@ -25,6 +27,23 @@ export function useCreateCommande(
       });
 
       if (error) throw error;
+
+      // WORKAROUND: Fix missing etablissement_id in create_commande RPC
+      // The RPC function currently doesn't set etablissement_id.
+      // We manually update the created command with the current user's establishment.
+      const userProfile = useAuthStore.getState().user;
+      
+      if (data && userProfile?.etablissement_id) {
+        try {
+            await supabase
+            .from('commandes')
+            .update({ etablissement_id: userProfile.etablissement_id })
+            .eq('id', data);
+        } catch (e) {
+            console.warn('Failed to patch etablissement_id for commande:', data, e);
+        }
+      }
+
       return data;
     },
     onSuccess: () => {

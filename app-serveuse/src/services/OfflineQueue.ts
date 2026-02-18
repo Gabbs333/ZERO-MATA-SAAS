@@ -71,13 +71,36 @@ class OfflineQueue {
 
         // Try to execute the command
         if (command.type === 'create_commande') {
-          const { error } = await supabase.rpc('create_commande', {
+          const { data: commandeId, error } = await supabase.rpc('create_commande', {
             p_table_id: command.data.table_id,
             p_items: command.data.items,
           });
 
           if (error) {
             throw error;
+          }
+
+          // WORKAROUND: Fix missing etablissement_id in create_commande RPC
+          // The RPC function currently doesn't set etablissement_id.
+          // We manually update the created command with the current user's establishment.
+          if (commandeId) {
+            try {
+              // Fetch user profile to get etablissement_id
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('etablissement_id')
+                .eq('id', session.user.id)
+                .single();
+
+              if (profile?.etablissement_id) {
+                await supabase
+                  .from('commandes')
+                  .update({ etablissement_id: profile.etablissement_id })
+                  .eq('id', commandeId);
+              }
+            } catch (e) {
+              console.warn('Failed to patch etablissement_id for offline commande:', commandeId, e);
+            }
           }
 
           // Success - remove from queue
