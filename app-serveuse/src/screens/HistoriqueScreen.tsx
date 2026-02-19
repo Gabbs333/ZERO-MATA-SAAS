@@ -4,11 +4,13 @@ import { Search, ChevronLeft, Calendar, Filter, X, ShoppingBag } from 'lucide-re
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
+import { useHistoriqueRealtime } from '../hooks/useRealtimeSubscription';
 import { useAuthStore } from '../store/authStore';
 import { useColorScheme } from 'nativewind';
 import { startOfDay, startOfWeek, startOfMonth, format, endOfDay, parse } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Commande, CommandeItem, Table } from '../types/database.types';
 
 type CommandeWithDetails = Commande & {
@@ -59,6 +61,12 @@ export default function HistoriqueScreen({ navigation }: any) {
   const [customDateRange, setCustomDateRange] = useState<{start: Date, end: Date}>({ start: new Date(), end: new Date() });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [datePickerMode, setDatePickerMode] = useState<'start' | 'end'>('start');
+  const queryClient = useQueryClient();
+
+  // Realtime subscription for history updates
+  useHistoriqueRealtime(user?.id, () => {
+    queryClient.invalidateQueries({ queryKey: ['historique'] });
+  });
 
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';

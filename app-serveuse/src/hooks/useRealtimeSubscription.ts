@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
 
@@ -17,6 +17,13 @@ export function useRealtimeSubscription({
   filter,
   callback,
 }: UseRealtimeSubscriptionOptions) {
+  // Use a ref for the callback to prevent unnecessary resubscriptions
+  const callbackRef = useRef(callback);
+
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
   useEffect(() => {
     let channel: RealtimeChannel;
 
@@ -35,7 +42,11 @@ export function useRealtimeSubscription({
           table,
           filter: filter || undefined,
         },
-        callback
+        (payload) => {
+          if (callbackRef.current) {
+            callbackRef.current(payload);
+          }
+        }
       );
 
       channel.subscribe((status) => {
@@ -55,7 +66,7 @@ export function useRealtimeSubscription({
         console.log(`🔌 Unsubscribed from ${table} ${event}`);
       }
     };
-  }, [table, event, filter, callback]); // Dependencies are crucial
+  }, [table, event, filter]); // Removed callback from dependencies
 }
 
 // Hook spécifique pour les mises à jour de tables
@@ -105,8 +116,18 @@ export function useFacturesRealtime(onUpdate: (payload: any) => void) {
 // Hook spécifique pour les mises à jour de stock
 export function useStockRealtime(onUpdate: (payload: any) => void) {
   useRealtimeSubscription({
-    table: 'stock', // Table name is usually singular in Supabase, but check migration. Migration says 'stock'
+    table: 'stocks', // Changed from 'stock' to 'stocks' to match DB table name
     event: '*',
+    callback: onUpdate,
+  });
+}
+
+// Hook pour les mises à jour de l'historique (commandes)
+export function useHistoriqueRealtime(serveuseId: string | undefined, onUpdate: (payload: any) => void) {
+  useRealtimeSubscription({
+    table: 'commandes',
+    event: '*',
+    filter: serveuseId ? `serveuse_id=eq.${serveuseId}` : undefined,
     callback: onUpdate,
   });
 }
