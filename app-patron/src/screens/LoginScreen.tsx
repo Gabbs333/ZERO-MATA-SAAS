@@ -42,7 +42,7 @@ export function LoginScreen() {
             <img 
               src={theme === 'dark' ? logoDark : logoLight} 
               alt="ZERO-MATA" 
-              className="h-32 w-auto object-contain" 
+              className="w-full max-w-[300px] h-auto object-contain" 
             />
           </div>
           <p className="text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-[0.2em] text-[10px]">Tableau de Bord Patron</p>

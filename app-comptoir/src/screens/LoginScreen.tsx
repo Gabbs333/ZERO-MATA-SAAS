@@ -41,7 +41,7 @@ export default function LoginScreen() {
 
       <div className="relative z-10 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl p-8 rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 max-w-md w-full transition-all group hover:shadow-[0_0_40px_rgba(0,0,0,0.1)]">
         <div className="flex justify-center mb-6">
-          <img src={theme === 'dark' ? logoDark : logoLight} alt="ZERO-MATA" className="h-32 w-auto object-contain group-hover:scale-105 transition-transform duration-300" />
+          <img src={theme === 'dark' ? logoDark : logoLight} alt="ZERO-MATA" className="w-full max-w-[300px] h-auto object-contain group-hover:scale-105 transition-transform duration-300" />
         </div>
         
         <p className="text-center text-neutral-500 dark:text-neutral-400 mb-8 font-medium">
