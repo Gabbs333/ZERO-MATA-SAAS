@@ -42,10 +42,12 @@ export function LoginScreen() {
       <View className="flex-1 justify-center p-5">
         <View className="w-full max-w-md self-center bg-white dark:bg-dark-card p-8 rounded-3xl shadow-soft border border-neutral-100 dark:border-white/5">
           <View className="items-center mb-6">
-            <View className="flex-row items-center justify-center p-4">
-              <Text className="text-4xl font-black tracking-tighter text-neutral-900 dark:text-white">
-                ZERO-MATA
-              </Text>
+            <View className="items-center justify-center p-4">
+              <Image 
+                source={isDark ? require('../../assets/logo-dark.png') : require('../../assets/logo-light.png')}
+                style={{ width: 280, height: 100 }}
+                resizeMode="contain"
+              />
             </View>
           </View>
           <Text className="text-sm text-center text-neutral-500 dark:text-neutral-400 mb-10 font-bold uppercase tracking-widest">
@@ -60,7 +62,7 @@ export function LoginScreen() {
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
-              className="w-full bg-neutral-100 dark:bg-white/5 border border-transparent dark:border-white/5 rounded-2xl px-4 py-4 text-primary dark:text-white font-bold"
+              className="w-full bg-neutral-100 dark:bg-white/5 border border-transparent dark:border-white/5 rounded-2xl px-4 py-4 text-neutral-900 dark:text-white font-bold"
               placeholder="votre@email.com"
               placeholderTextColor={isDark ? "#4B5563" : "#9CA3AF"}
               editable={!loading}
@@ -75,7 +77,7 @@ export function LoginScreen() {
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
                 autoComplete="password"
-                className="w-full bg-neutral-100 dark:bg-white/5 border border-transparent dark:border-white/5 rounded-2xl px-4 py-4 text-primary dark:text-white pr-12 font-bold"
+                className="w-full bg-neutral-100 dark:bg-white/5 border border-transparent dark:border-white/5 rounded-2xl px-4 py-4 text-neutral-900 dark:text-white pr-12 font-bold"
                 placeholder="Votre mot de passe"
                 placeholderTextColor={isDark ? "#4B5563" : "#9CA3AF"}
                 editable={!loading}
