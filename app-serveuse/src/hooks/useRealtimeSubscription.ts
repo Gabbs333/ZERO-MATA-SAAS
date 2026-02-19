@@ -127,7 +127,16 @@ export function useHistoriqueRealtime(serveuseId: string | undefined, onUpdate: 
   useRealtimeSubscription({
     table: 'commandes',
     event: '*',
-    filter: serveuseId ? `serveuse_id=eq.${serveuseId}` : undefined,
-    callback: onUpdate,
+    // Suppression du filtre serveur 'filter' car il semble poser problème.
+    // On filtre manuellement côté client.
+    callback: (payload) => {
+      // Vérifier si l'événement concerne cette serveuse
+      const record = payload.new || payload.old; // new pour INSERT/UPDATE, old pour DELETE
+      
+      // Si on a un enregistrement et qu'il appartient à la serveuse (ou si on ne peut pas vérifier, on update par précaution)
+      if (record && record.serveuse_id === serveuseId) {
+        onUpdate(payload);
+      }
+    },
   });
 }
