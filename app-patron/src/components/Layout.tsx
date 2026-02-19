@@ -163,7 +163,7 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Desktop Sidebar */}
       <div className={`hidden md:flex fixed top-0 left-0 bottom-0 ${isCollapsed ? 'w-20' : 'w-64'} flex-col bg-white dark:bg-dark-card border-r border-neutral-200 dark:border-white/5 z-50 transition-all duration-300`}>
-          <div className={`p-6 border-b border-neutral-200 relative flex items-center bg-white ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}>
+          <div className={`p-6 border-b border-white/20 relative flex items-center bg-white/80 backdrop-blur-xl ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}>
              <div className={`flex items-center gap-3 w-full ${isCollapsed ? 'hidden' : 'flex'}`}>
                 <div className="h-32 w-full flex items-center justify-start px-2">
                    <img 
@@ -248,7 +248,7 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Mobile Sidebar Drawer */}
       <div className={`md:hidden fixed top-0 left-0 bottom-0 w-72 bg-white dark:bg-dark-card z-[70] shadow-2xl transition-transform duration-300 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          <div className="p-6 border-b border-neutral-200 bg-white flex items-center justify-between">
+          <div className="p-6 border-b border-white/20 bg-white/80 backdrop-blur-xl flex items-center justify-between">
              <div className="flex items-center gap-3 flex-1">
                 <img 
                   src={logoLight} 

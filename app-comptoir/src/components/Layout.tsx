@@ -92,7 +92,7 @@ export default function Layout({ children }: LayoutProps) {
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
-        <div className="h-32 flex items-center justify-between px-6 border-b border-neutral-200 relative overflow-hidden flex-shrink-0 bg-white">
+        <div className="h-32 flex items-center justify-between px-6 border-b border-white/20 relative overflow-hidden flex-shrink-0 bg-white/80 backdrop-blur-xl">
           {/* Logo area glow */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
           
