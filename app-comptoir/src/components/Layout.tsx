@@ -2,7 +2,9 @@ import { ReactNode, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { ThemeToggle } from './ThemeToggle';
-import logoFull from '../assets/logo.png';
+import logoLight from '../assets/logo-light.png';
+import logoDark from '../assets/logo-dark.png';
+import { useTheme } from '../hooks/useTheme';
 import logoIcon from '../assets/icon.png';
 import { 
   Menu, 
@@ -94,8 +96,12 @@ export default function Layout({ children }: LayoutProps) {
           {/* Logo area glow */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
           
-          <div className="h-14 w-auto flex items-center justify-start relative z-10">
-            <img src={logoFull} alt="ZERO-MATA" className="h-full w-auto object-contain" />
+          <div className="h-20 w-auto flex items-center justify-start relative z-10">
+            <img 
+              src={theme === 'dark' ? logoDark : logoLight} 
+              alt="ZERO-MATA" 
+              className="h-full w-auto object-contain" 
+            />
           </div>
           <button 
             onClick={() => setIsSidebarOpen(false)}
