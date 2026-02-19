@@ -92,13 +92,13 @@ export default function Layout({ children }: LayoutProps) {
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
-        <div className="h-20 flex items-center justify-between px-6 border-b border-neutral-200/50 dark:border-white/5 relative overflow-hidden flex-shrink-0">
+        <div className="h-32 flex items-center justify-between px-6 border-b border-neutral-200 relative overflow-hidden flex-shrink-0 bg-white">
           {/* Logo area glow */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
           
-          <div className="h-24 w-full flex items-center justify-start relative z-10 px-2">
+          <div className="h-full w-full flex items-center justify-start relative z-10 px-2">
             <img 
-              src={theme === 'dark' ? logoDark : logoLight} 
+              src={logoLight} 
               alt="ZERO-MATA" 
               className="w-full h-full object-contain" 
             />

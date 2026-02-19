@@ -26,6 +26,7 @@
     "expo-asset": "~11.0.5",
     "expo-status-bar": "~2.0.1",
     "jest-validate": "^30.2.0",
+    "jimp": "^0.16.1",
     "lucide-react-native": "^0.563.0",
     "nativewind": "^4.2.1",
     "react": "18.3.1",
