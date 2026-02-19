@@ -2,7 +2,9 @@ import { useState, FormEvent } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, AlertCircle, LogIn, Mail, Lock } from 'lucide-react';
-import logoFull from '../assets/logo.png';
+import logoLight from '../assets/logo-light.png';
+import logoDark from '../assets/logo-dark.png';
+import { useTheme } from '../hooks/useTheme';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -11,6 +13,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   const { signIn } = useAuthStore();
+  const { theme } = useTheme();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {

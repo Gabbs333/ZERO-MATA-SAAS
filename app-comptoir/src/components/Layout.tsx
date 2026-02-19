@@ -25,6 +25,7 @@ export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile, signOut, loading, error } = useAuthStore();
+  const { theme } = useTheme();
   
   // Safe access to establishment name with array check (defensive programming)
   const getEtablissementName = () => {

@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Lock, Mail, LogIn, AlertCircle } from 'lucide-react';
-import logoFull from '../assets/logo.png';
+import logoLight from '../assets/logo-light.png';
+import logoDark from '../assets/logo-dark.png';
+import { useTheme } from '../hooks/useTheme';
 
 export function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -11,6 +13,7 @@ export function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { signIn } = useAuthStore();
+  const { theme } = useTheme();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +39,11 @@ export function LoginScreen() {
       <div className="w-full max-w-md bg-white dark:bg-dark-card/40 dark:backdrop-blur-xl rounded-3xl shadow-2xl shadow-neutral-200/50 dark:shadow-none border border-neutral-200 dark:border-white/5 p-8 md:p-10 animate-in fade-in zoom-in duration-500">
         <div className="text-center mb-10">
           <div className="flex justify-center mb-6">
-            <img src={logoFull} alt="ZERO-MATA" className="h-24 w-auto object-contain" />
+            <img 
+              src={theme === 'dark' ? logoDark : logoLight} 
+              alt="ZERO-MATA" 
+              className="h-32 w-auto object-contain" 
+            />
           </div>
           <p className="text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-[0.2em] text-[10px]">Tableau de Bord Patron</p>
         </div>

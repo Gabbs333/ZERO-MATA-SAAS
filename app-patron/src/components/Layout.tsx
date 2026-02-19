@@ -19,7 +19,9 @@ import {
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationsPopover } from './NotificationsPopover';
-import logoFull from '../assets/logo.png';
+import logoLight from '../assets/logo-light.png';
+import logoDark from '../assets/logo-dark.png';
+import { useTheme } from '../hooks/useTheme';
 import logoIcon from '../assets/icon.png';
 
 interface LayoutProps {
@@ -30,6 +32,7 @@ export function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile, signOut } = useAuthStore();
+  const { theme } = useTheme();
   
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebar-collapsed');
@@ -162,8 +165,12 @@ export function Layout({ children }: LayoutProps) {
       <div className={`hidden md:flex fixed top-0 left-0 bottom-0 ${isCollapsed ? 'w-20' : 'w-64'} flex-col bg-white dark:bg-dark-card border-r border-neutral-200 dark:border-white/5 z-50 transition-all duration-300`}>
           <div className={`p-6 border-b border-neutral-200 dark:border-white/5 relative flex items-center ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}>
              <div className={`flex items-center gap-3 ${isCollapsed ? 'hidden' : 'flex'}`}>
-                <div className="h-14 w-auto flex items-center justify-start">
-                   <img src={logoFull} alt="ZERO-MATA" className="h-full w-auto object-contain" />
+                <div className="h-16 w-auto flex items-center justify-start">
+                   <img 
+                     src={theme === 'dark' ? logoDark : logoLight} 
+                     alt="ZERO-MATA" 
+                     className="h-full w-auto object-contain" 
+                   />
                 </div>
              </div>
              
@@ -243,7 +250,11 @@ export function Layout({ children }: LayoutProps) {
       <div className={`md:hidden fixed top-0 left-0 bottom-0 w-72 bg-white dark:bg-dark-card z-[70] shadow-2xl transition-transform duration-300 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="p-6 border-b border-neutral-200 dark:border-white/5 flex items-center justify-between">
              <div className="flex items-center gap-3">
-                <img src={logoFull} alt="ZERO-MATA" className="h-10 w-auto object-contain" />
+                <img 
+                  src={theme === 'dark' ? logoDark : logoLight} 
+                  alt="ZERO-MATA" 
+                  className="h-14 w-auto object-contain" 
+                />
              </div>
              <button 
                 onClick={() => setIsMobileMenuOpen(false)}
