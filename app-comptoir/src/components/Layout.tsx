@@ -96,11 +96,11 @@ export default function Layout({ children }: LayoutProps) {
           {/* Logo area glow */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
           
-          <div className="h-20 w-auto flex items-center justify-start relative z-10">
+          <div className="h-24 w-full flex items-center justify-start relative z-10 px-2">
             <img 
               src={theme === 'dark' ? logoDark : logoLight} 
               alt="ZERO-MATA" 
-              className="h-full w-auto object-contain" 
+              className="w-full h-full object-contain" 
             />
           </div>
           <button 
