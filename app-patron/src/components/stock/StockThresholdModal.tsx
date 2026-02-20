@@ -37,8 +37,7 @@ export function StockThresholdModal({
       const { error } = await supabase
         .from('stocks')
         .update({ 
-          seuil_alerte: newThreshold,
-          date_derniere_maj: new Date().toISOString()
+          seuil_alerte: newThreshold
         })
         .eq('id', stockId);
 

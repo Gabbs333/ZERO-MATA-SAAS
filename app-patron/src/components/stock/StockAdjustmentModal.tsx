@@ -124,8 +124,7 @@ export function StockAdjustmentModal({
       const { error: updateError } = await supabase
         .from('stocks')
         .update({ 
-          quantite_actuelle: newStockQuantity,
-          date_derniere_maj: new Date().toISOString()
+          quantite_actuelle: newStockQuantity
         })
         .eq('produit_id', selectedProductId)
         .eq('etablissement_id', etablissementId);

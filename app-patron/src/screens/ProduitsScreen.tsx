@@ -121,7 +121,6 @@ export function ProduitsScreen() {
                     etablissement_id: profile.etablissement_id,
                     quantite_actuelle: initialStock !== '' ? Number(initialStock) : 0,
                     seuil_alerte: 10, // Default alert threshold
-                    date_derniere_maj: new Date().toISOString()
                 });
             
             if (stockError) {

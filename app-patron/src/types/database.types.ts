@@ -53,7 +53,6 @@ export interface Stock {
   quantite_actuelle: number;
   seuil_alerte: number;
   etablissement_id: string;
-  date_derniere_maj: string;
   produits?: Produit;
 }
 
