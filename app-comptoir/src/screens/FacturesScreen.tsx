@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import { useFactures, useFacturesImpayeesAlerts } from '../hooks/useSupabaseQuery';
 import { useCreateEncaissement } from '../hooks/useSupabaseMutation';
 import { useRealtimeSubscription } from '../hooks/useRealtimeSubscription';
+import { useAuthStore } from '../store/authStore';
 import type { FactureWithDetails } from '../types/database.types';
+import { Receipt } from '../components/Receipt';
 import { 
   Loader, 
   AlertTriangle, 
-  Receipt, 
+  Receipt as ReceiptIcon, 
   CreditCard, 
   Banknote, 
   Smartphone, 
@@ -16,7 +18,8 @@ import {
   Search,
   Eye,
   Calendar,
-  Filter
+  Filter,
+  Printer
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { startOfDay, startOfWeek, startOfMonth, endOfDay } from 'date-fns';
@@ -24,6 +27,7 @@ import { startOfDay, startOfWeek, startOfMonth, endOfDay } from 'date-fns';
 type TimeFilter = 'today' | 'week' | 'month' | 'all' | 'custom';
 
 export default function FacturesScreen() {
+  const { profile } = useAuthStore();
   const [tabValue, setTabValue] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFacture, setSelectedFacture] = useState<FactureWithDetails | null>(null);
@@ -172,7 +176,8 @@ export default function FacturesScreen() {
   }
 
   return (
-    <div className="space-y-6 pb-20 lg:pb-0 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <>
+      <div className="space-y-6 pb-20 lg:pb-0 animate-in fade-in slide-in-from-bottom-4 duration-500 print:hidden">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-primary dark:text-white mb-2">Factures & Encaissements</h1>
@@ -310,7 +315,7 @@ export default function FacturesScreen() {
                   
                   <div className="flex items-center gap-3 mb-6">
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-neutral-100 to-white dark:from-neutral-800 dark:to-neutral-700 border border-neutral-200 dark:border-white/10 shadow-sm flex items-center justify-center flex-shrink-0">
-                      <Receipt className="w-6 h-6 text-primary dark:text-white" />
+                      <ReceiptIcon className="w-6 h-6 text-primary dark:text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-lg font-bold font-display text-primary dark:text-white tracking-tight truncate" title={facture.numero_facture}>
@@ -401,12 +406,21 @@ export default function FacturesScreen() {
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">Enregistrer un paiement</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowEncaissementDialog(false)}
-                className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-white/10 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => window.print()}
+                  className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-white/10 text-neutral-500 hover:text-blue-600 dark:text-neutral-400 dark:hover:text-white transition-colors"
+                  title="Imprimer le reçu"
+                >
+                  <Printer className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => setShowEncaissementDialog(false)}
+                  className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-white/10 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             
             <div className="p-6 space-y-6 overflow-y-auto">
@@ -450,7 +464,7 @@ export default function FacturesScreen() {
                       { id: 'especes', label: 'Espèces', icon: Banknote },
                       { id: 'carte', label: 'Carte', icon: CreditCard },
                       { id: 'mobile_money', label: 'Mobile Money', icon: Smartphone },
-                      { id: 'cheque', label: 'Chèque', icon: Receipt },
+                      { id: 'cheque', label: 'Chèque', icon: ReceiptIcon },
                     ].map((mode) => (
                       <button
                         key={mode.id}
@@ -511,24 +525,33 @@ export default function FacturesScreen() {
 
       {/* Modal Détails */}
       {showDetailsDialog && selectedFacture && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/60 backdrop-blur-sm print:hidden">
           <div className="bg-white/95 dark:bg-neutral-900/95 backdrop-blur-2xl rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in duration-300 border border-white/20 dark:border-white/10 ring-1 ring-black/5 flex flex-col max-h-[90vh]">
             <div className="px-6 py-5 border-b border-neutral-200 dark:border-white/5 flex justify-between items-center bg-gradient-to-r from-neutral-50/50 to-white/50 dark:from-white/5 dark:to-transparent flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-neutral-100 dark:bg-white/10 rounded-xl">
-                  <Receipt className="w-5 h-5 text-primary dark:text-white" />
+                  <ReceiptIcon className="w-5 h-5 text-primary dark:text-white" />
                 </div>
                 <div>
                   <h3 className="font-display font-bold text-lg text-primary dark:text-white leading-tight">Détails Facture</h3>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">{selectedFacture.numero_facture}</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowDetailsDialog(false)}
-                className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-white/10 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => window.print()}
+                  className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-white/10 text-neutral-400 hover:text-primary dark:hover:text-white transition-colors"
+                  title="Imprimer"
+                >
+                  <Printer className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => setShowDetailsDialog(false)}
+                  className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-white/10 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             
             <div className="p-6 space-y-6 overflow-y-auto">
@@ -592,10 +615,17 @@ export default function FacturesScreen() {
               </div>
             </div>
             
-            <div className="p-6 border-t border-neutral-200 dark:border-white/5 bg-neutral-50/50 dark:bg-white/5 flex-shrink-0">
+            <div className="p-6 border-t border-neutral-200 dark:border-white/5 bg-white dark:bg-neutral-900 flex-shrink-0 flex gap-3">
+               <button
+                  onClick={() => window.print()}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
+                >
+                  <Printer className="w-5 h-5" />
+                  Imprimer Ticket
+                </button>
                <button
                   onClick={() => setShowDetailsDialog(false)}
-                  className="w-full py-3 bg-neutral-200 dark:bg-white/10 hover:bg-neutral-300 dark:hover:bg-white/20 text-primary dark:text-white rounded-xl font-bold transition-all"
+                  className="flex-1 py-3 bg-neutral-100 dark:bg-white/10 hover:bg-neutral-200 dark:hover:bg-white/20 text-neutral-900 dark:text-white rounded-xl font-bold transition-all"
                 >
                   Fermer
                 </button>
@@ -603,6 +633,18 @@ export default function FacturesScreen() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {/* Printable Receipt */}
+      {selectedFacture && (
+        <div className="hidden print:block print:fixed print:inset-0 print:bg-white print:z-[9999] print:p-0">
+          <Receipt 
+            facture={selectedFacture} 
+            etablissement={profile?.etablissement} 
+            serveur={selectedFacture.commandes.profiles}
+          />
+        </div>
+      )}
+    </>
   );
 }
