@@ -108,14 +108,14 @@ export function ProduitsScreen() {
         
         if (error) throw error;
 
-        // Add initial stock if provided
-        if (initialStock !== '' && data?.id) {
+        // Always create a stock entry, even if initial stock is not provided
+        if (data?.id) {
             const { error: stockError } = await supabase
                 .from('stocks')
                 .insert({
                     produit_id: data.id,
                     etablissement_id: profile.etablissement_id,
-                    quantite_actuelle: Number(initialStock),
+                    quantite_actuelle: initialStock !== '' ? Number(initialStock) : 0,
                     seuil_alerte: 10, // Default alert threshold
                     date_derniere_maj: new Date().toISOString()
                 });
