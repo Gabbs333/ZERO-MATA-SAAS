@@ -13,7 +13,8 @@ import {
   Edit, 
   X, 
   Archive, 
-  ArchiveRestore 
+  ArchiveRestore,
+  Trash2 
 } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
@@ -151,6 +152,34 @@ export function ProduitsScreen() {
     }
   };
 
+  const handleDeleteProduct = async (product: Produit) => {
+    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer le produit "${product.nom}" ? Cette action est irréversible.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('produits')
+        .delete()
+        .eq('id', product.id);
+
+      if (error) {
+        console.error('Error deleting product:', error);
+        // Check for foreign key violation code (23503 is common for Postgres)
+        if (error.code === '23503') {
+             alert("Impossible de supprimer ce produit car il est lié à des commandes ou des stocks existants. Vous pouvez le désactiver à la place.");
+        } else {
+             alert("Erreur lors de la suppression du produit.");
+        }
+      } else {
+        refetch();
+      }
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      alert("Erreur lors de la suppression du produit.");
+    }
+  };
+
   const filteredProduits = produits?.filter(product => {
     const matchesSearch = product.nom.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = categoryFilter === 'all' || product.categorie === categoryFilter;
@@ -241,12 +270,22 @@ export function ProduitsScreen() {
                       </div>
                     </div>
                     
-                    <button 
-                        onClick={() => handleOpenModal(product)}
-                        className="text-neutral-400 hover:text-primary dark:hover:text-white transition-colors"
-                    >
-                        <Edit className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={() => handleOpenModal(product)}
+                            className="text-neutral-400 hover:text-primary dark:hover:text-white transition-colors"
+                            title="Modifier"
+                        >
+                            <Edit className="w-5 h-5" />
+                        </button>
+                        <button 
+                            onClick={() => handleDeleteProduct(product)}
+                            className="text-neutral-400 hover:text-red-500 transition-colors"
+                            title="Supprimer"
+                        >
+                            <Trash2 className="w-5 h-5" />
+                        </button>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between mt-4">
