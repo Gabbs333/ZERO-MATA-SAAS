@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -30,6 +31,7 @@ const INITIAL_FORM_DATA: ProductFormData = {
 
 export function ProduitsScreen() {
   const profile = useAuthStore((state) => state.profile);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'boisson' | 'nourriture' | 'autre'>('all');
   
@@ -111,6 +113,7 @@ export function ProduitsScreen() {
 
         // Always create a stock entry, even if initial stock is not provided
         if (data?.id) {
+            console.log('Product created with ID:', data.id);
             const { error: stockError } = await supabase
                 .from('stocks')
                 .insert({
@@ -123,10 +126,19 @@ export function ProduitsScreen() {
             
             if (stockError) {
                 console.error('Error creating initial stock:', stockError);
-                // We don't throw here to avoid failing the product creation, 
-                // but we should probably alert the user or log it.
+                // Check if error is unique violation (23505) - meaning stock already exists (maybe via trigger)
+                if (stockError.code === '23505') {
+                    console.log('Stock entry already exists (likely created by trigger). Ignoring.');
+                } else {
+                    alert(`Attention: Le produit a été créé mais le stock n'a pas pu être initialisé. Erreur: ${stockError.message}`);
+                }
+            } else {
+                console.log('Stock entry created successfully');
             }
         }
+
+        // Invalidate stocks query to refresh the list
+        queryClient.invalidateQueries({ queryKey: ['stocks'] });
       }
       refetch();
       handleCloseModal();
@@ -172,6 +184,8 @@ export function ProduitsScreen() {
              alert("Erreur lors de la suppression du produit.");
         }
       } else {
+        // Invalidate stocks query to refresh the list
+        queryClient.invalidateQueries({ queryKey: ['stocks'] });
         refetch();
       }
     } catch (error) {
