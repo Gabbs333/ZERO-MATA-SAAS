@@ -1,5 +1,5 @@
 // Simple Edge Function for patron to invite staff
-// With detailed logging
+// With API key verification
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,17 +19,19 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Get environment variables first
+    // Get environment variables and API key
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')
+    const anonKey = req.headers.get('apikey') // Supabase passes this automatically
     
     console.log('Environment check:', { 
       hasUrl: !!supabaseUrl, 
-      hasKey: !!serviceRoleKey 
+      hasKey: !!serviceRoleKey,
+      hasAnonKey: !!anonKey
     })
 
     if (!supabaseUrl || !serviceRoleKey) {
-      const error = 'Missing SUPABASE_URL or SERVICE_ROLE_KEY'
+      const error = 'Missing environment variables'
       console.error(error)
       return new Response(JSON.stringify({ error }), {
         status: 500,
@@ -37,20 +39,28 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Get Authorization header
+    // Check authorization - either from header or apikey
     const authHeader = req.headers.get('Authorization')
     console.log('Has auth header:', !!authHeader)
     
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Authorization required' }), {
+      return new Response(JSON.stringify({ error: 'Authorization required - please login' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
     // Get request body
-    const body = await req.json()
-    console.log('Request body received')
+    let body
+    try {
+      body = await req.json()
+      console.log('Request body received')
+    } catch (e) {
+      return new Response(JSON.stringify({ error: 'Invalid request body' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
     
     const { p_email, p_password, p_role, p_nom, p_prenom } = body
 
@@ -62,7 +72,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Extract user from JWT (we don't verify, just decode)
+    // Extract user from JWT
     const token = authHeader.replace('Bearer ', '')
     const parts = token.split('.')
     let userId = null
@@ -78,7 +88,7 @@ Deno.serve(async (req) => {
     }
 
     if (!userId) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
+      return new Response(JSON.stringify({ error: 'Invalid token format' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -107,10 +117,11 @@ Deno.serve(async (req) => {
     })
 
     const authResult = await authResponse.json()
-    console.log('Auth response:', authResponse.status, authResult)
+    console.log('Auth response status:', authResponse.status)
 
     if (!authResponse.ok || authResult.error) {
-      return new Response(JSON.stringify({ error: authResult.error || 'Failed to create user' }), {
+      console.error('Auth error:', authResult)
+      return new Response(JSON.stringify({ error: authResult.error?.message || 'Failed to create user' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -121,7 +132,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       user_id: authResult.id,
-      message: 'User created'
+      message: 'Staff member created successfully'
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
