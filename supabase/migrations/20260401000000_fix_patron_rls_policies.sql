@@ -1,9 +1,9 @@
 -- Migration: Fix handle_new_user trigger and patron profile insertion
 -- Description: Fixes the user creation flow to properly set etablissement_id and allows patron to create staff profiles
 
--- ==========================================================================
+-- ============================================================================
 -- PART 1: Create admin_create_user function using Supabase auth.admin API
--- ==========================================================================
+-- ============================================================================
 
 -- Function to create a user (only accessible by admins)
 -- This function is needed by patron_invite_staff
@@ -20,7 +20,7 @@ RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $
+AS $$
 DECLARE
   new_user_id UUID;
 BEGIN
@@ -46,11 +46,6 @@ BEGIN
   RETURN new_user_id;
 EXCEPTION
   WHEN duplicate_object THEN
-    RAISE EXCEPTION 'User with this email already exists';
-END;
-$;
-EXCEPTION
-  WHEN unique_violation THEN
     RAISE EXCEPTION 'User with this email already exists';
 END;
 $$;
@@ -194,7 +189,7 @@ COMMENT ON POLICY "gerant_patron_insert_mouvements_stock" ON mouvements_stock IS
 -- ============================================================================
 
 -- The main fixes applied:
--- 1. admin_create_user function created with pgcrypto
+-- 1. admin_create_user function created using Supabase auth.admin API
 -- 2. handle_new_user now sets etablissement_id from raw_user_meta_data
 -- 3. patron_invite_staff uses admin_create_user 
 -- 4. patron_insert_establishment_profiles policy validated

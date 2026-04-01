@@ -12,7 +12,7 @@ returns uuid
 language plpgsql
 security definer
 set search_path = public
-as $
+as $$
 declare
   new_user_id uuid;
   check_role text;
@@ -47,68 +47,51 @@ exception
   when duplicate_object then
     raise exception 'User with this email already exists';
 end;
-$;
+$$;
+
+-- Create function for admin to manage establishment users
+-- This is used by admin dashboard to create users in specific establishments
+create or replace function admin_invite_establishment_user(
+  p_email text,
+  p_password text,
+  p_role text,
+  p_etablissement_id uuid,
+  p_nom text,
+  p_prenom text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_user_id uuid;
+  caller_role text;
+begin
+  -- Check if caller is admin
+  select role into caller_role from public.profiles where id = auth.uid();
+  if caller_role != 'admin' then
+    raise exception 'Unauthorized: Only admins can create users';
+  end if;
+
+  -- Verify establishment exists
+  if not exists (select 1 from etablissements where id = p_etablissement_id) then
+    raise exception 'Establishment not found';
+  end if;
+
+  -- Use admin_create_user
+  new_user_id := public.admin_create_user(
+    p_email,
+    p_password,
+    p_role,
+    p_etablissement_id,
+    p_nom,
+    p_prenom
+  );
   
   return new_user_id;
-exception
-  when unique_violation then
-    raise exception 'User with this email already exists';
 end;
 $$;
 
--- Function to update user password (only accessible by admins)
-create or replace function admin_update_user_password(
-  target_user_id uuid,
-  new_password text
-)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  check_role text;
-begin
-  -- Check if caller is admin
-  select role into check_role from public.profiles where id = auth.uid();
-  if check_role != 'admin' then
-    raise exception 'Unauthorized: Only admins can update passwords';
-  end if;
-
-  update auth.users
-  set encrypted_password = crypt(new_password, gen_salt('bf')),
-      updated_at = now()
-  where id = target_user_id;
-end;
-$$;
-
--- Function to update user email (only accessible by admins)
-create or replace function admin_update_user_email(
-  target_user_id uuid,
-  new_email text
-)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  check_role text;
-begin
-  -- Check if caller is admin
-  select role into check_role from public.profiles where id = auth.uid();
-  if check_role != 'admin' then
-    raise exception 'Unauthorized: Only admins can update emails';
-  end if;
-
-  update auth.users
-  set email = new_email,
-      updated_at = now()
-  where id = target_user_id;
-  
-  -- Profile email update is handled by trigger usually, but let's ensure consistency
-  update public.profiles
-  set email = new_email
-  where id = target_user_id;
-end;
-$$;
+comment on function admin_create_user is 'Creates a new user with hashed password using Supabase auth.admin API';
+comment on function admin_invite_establishment_user is 'Allows admin to invite users to a specific establishment';
