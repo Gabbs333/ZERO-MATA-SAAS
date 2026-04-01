@@ -1,6 +1,9 @@
 -- Migration: Fix handle_new_user trigger and patron profile insertion
 -- Description: Fixes the user creation flow to properly set etablissement_id and allows patron to create staff profiles
 
+-- Enable pgcrypto extension for password hashing
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 -- ============================================================================
 -- FIX 1: Update handle_new_user trigger to set etablissement_id
 -- ============================================================================
@@ -22,10 +25,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-COMMENT ON FUNCTION public.handle_new_user IS 'Automatically creates a profile when a new user signs up, including etablissement_id';
-
 -- ============================================================================
 -- FIX 2: Create function for patron to invite staff members
+-- Uses pgcrypto extension for password hashing
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.patron_invite_staff(
@@ -44,30 +46,49 @@ DECLARE
   new_user_id UUID;
   caller_etablissement_id UUID;
   caller_role TEXT;
-  v_encrypted_pw TEXT;
 BEGIN
+  -- Get the caller's profile
   SELECT p.etablissement_id, p.role INTO caller_etablissement_id, caller_role
   FROM public.profiles p
   WHERE p.id = auth.uid();
   
+  -- Verify caller is a patron
   IF caller_role != 'patron' THEN
     RAISE EXCEPTION 'Accès refusé. Seul le patron peut inviter des membres du personnel.';
   END IF;
   
+  -- Verify caller has an establishment
   IF caller_etablissement_id IS NULL THEN
     RAISE EXCEPTION 'Votre compte n''est lié à aucun établissement.';
   END IF;
   
+  -- Validate role
   IF p_role NOT IN ('serveuse', 'comptoir', 'gerant') THEN
     RAISE EXCEPTION 'Rôle invalide. Les rôles autorisés sont: serveuse, comptoir, gerant';
   END IF;
   
-  v_encrypted_pw := crypt(p_password, gen_salt('bf'));
+  -- Check if user already exists
+  IF (SELECT id FROM auth.users WHERE email = p_email) IS NOT NULL THEN
+    RAISE EXCEPTION 'Un utilisateur avec cet email existe déjà.';
+  END IF;
   
+  -- Insert directly into auth.users
   INSERT INTO auth.users (
-    instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
-    raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-    confirmation_token, email_change, email_change_token_new, recovery_token
+    instance_id,
+    id,
+    aud,
+    role,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    created_at,
+    updated_at,
+    confirmation_token,
+    email_change,
+    email_change_token_new,
+    recovery_token
   )
   values (
     '00000000-0000-0000-0000-000000000000',
@@ -75,7 +96,7 @@ BEGIN
     'authenticated',
     'authenticated',
     p_email,
-    v_encrypted_pw,
+    crypt(p_password, gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}',
     jsonb_build_object(
@@ -84,7 +105,12 @@ BEGIN
       'prenom', p_prenom,
       'etablissement_id', caller_etablissement_id::text
     ),
-    now(), now(), '', '', '', ''
+    now(),
+    now(),
+    '',
+    '',
+    '',
+    ''
   )
   RETURNING id into new_user_id;
   
@@ -121,9 +147,6 @@ CREATE POLICY "patron_insert_establishment_profiles"
     )
   );
 
-COMMENT ON POLICY "patron_insert_establishment_profiles" ON profiles IS 
-'Multi-tenant: Patron can insert profiles in their establishment';
-
 -- ============================================================================
 -- FIX 4: Fix mouvements_stock insertion for manual adjustments
 -- ============================================================================
@@ -156,7 +179,7 @@ COMMENT ON POLICY "gerant_patron_insert_mouvements_stock" ON mouvements_stock IS
 -- 2. New patron_invite_staff function for patrons to create staff accounts
 -- 3. patron_insert_establishment_profiles policy now explicitly validates etablissement_id
 -- 4. gerant_patron_insert_mouvements_stock policy now validates etablissement_id
--- 5. Added proper comments for all policies
+-- 5. Added pgcrypto extension for password hashing
 
 -- This should resolve the issues where:
 -- - Creating staff member accounts fails due to RLS policy denial
