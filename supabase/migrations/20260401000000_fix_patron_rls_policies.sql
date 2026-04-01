@@ -1,15 +1,13 @@
 -- Migration: Fix handle_new_user trigger and patron profile insertion
 -- Description: Fixes the user creation flow to properly set etablissement_id and allows patron to create staff profiles
 
--- ============================================================================
--- PART 1: Enable pgcrypto and create admin_create_user function (if not exists)
--- ============================================================================
-
--- Enable pgcrypto for password hashing
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- ==========================================================================
+-- PART 1: Create admin_create_user function using Supabase auth.admin API
+-- ==========================================================================
 
 -- Function to create a user (only accessible by admins)
 -- This function is needed by patron_invite_staff
+-- Uses Supabase auth.admin API instead of direct auth.users insert
 CREATE OR REPLACE FUNCTION public.admin_create_user(
   p_email TEXT,
   p_password TEXT,
@@ -22,55 +20,23 @@ RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $
 DECLARE
   new_user_id UUID;
-  v_encrypted_pw TEXT;
 BEGIN
-  -- Generate encrypted password
-  v_encrypted_pw := crypt(p_password, gen_salt('bf'));
-
-  -- Create user in auth.users
-  INSERT INTO auth.users (
-    instance_id,
-    id,
-    aud,
-    role,
-    email,
-    encrypted_password,
-    email_confirmed_at,
-    raw_app_meta_data,
-    raw_user_meta_data,
-    created_at,
-    updated_at,
-    confirmation_token,
-    email_change,
-    email_change_token_new,
-    recovery_token
-  )
-  values (
-    '00000000-0000-0000-0000-000000000000',
-    gen_random_uuid(),
-    'authenticated',
-    'authenticated',
-    p_email,
-    v_encrypted_pw,
-    now(),
-    '{"provider":"email","providers":["email"]}',
-    jsonb_build_object(
+  -- Use Supabase auth.admin to create user
+  -- This is the recommended approach that handles password hashing properly
+  new_user_id := (auth.admin.create_user(
+    p_email => p_email,
+    p_password => p_password,
+    p_email_confirm => true,
+    p_raw_user_meta_data => jsonb_build_object(
       'role', p_role,
       'nom', p_nom,
       'prenom', p_prenom,
       'etablissement_id', p_etablissement_id
-    ),
-    now(),
-    now(),
-    '',
-    '',
-    '',
-    ''
-  )
-  RETURNING id into new_user_id;
+    )
+  )).id;
 
   -- Update profile with correct etablissement_id
   UPDATE public.profiles
@@ -78,6 +44,11 @@ BEGIN
   WHERE id = new_user_id;
   
   RETURN new_user_id;
+EXCEPTION
+  WHEN duplicate_object THEN
+    RAISE EXCEPTION 'User with this email already exists';
+END;
+$;
 EXCEPTION
   WHEN unique_violation THEN
     RAISE EXCEPTION 'User with this email already exists';
