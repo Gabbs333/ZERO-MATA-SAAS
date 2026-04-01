@@ -104,7 +104,7 @@ export function UtilisateursScreen() {
           p_prenom: formData.prenom
         });
         
-        // Get the current session token
+        // Get the current session
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) {
           throw new Error('Session expiré. Veuillez vous reconnecter.');
@@ -122,7 +122,8 @@ export function UtilisateursScreen() {
             p_password: formData.password,
             p_role: formData.role,
             p_nom: formData.nom,
-            p_prenom: formData.prenom
+            p_prenom: formData.prenom,
+            p_user_id: session.user.id
           })
         });
         

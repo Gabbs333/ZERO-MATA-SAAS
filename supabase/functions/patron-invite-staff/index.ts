@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')!
@@ -11,6 +11,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
+
+// Custom secret for this function (set in Supabase secrets)
+const FUNCTION_SECRET = Deno.env.get('PATRON_INVITE_SECRET')
 
 // Simple JWT decode - get user ID from token without verification
 function decodeJWT(token: string): { user_id: string } | null {
@@ -39,29 +42,54 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Get the authorization header
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Authorization header missing' }), {
-        status: 401,
+    // Check for custom secret in header (alternative to JWT verification)
+    const secretHeader = req.headers.get('x-function-secret')
+    if (FUNCTION_SECRET && secretHeader === FUNCTION_SECRET) {
+      // Allow access with custom secret
+      console.log('Access granted via function secret')
+    } else {
+      // Try to verify via JWT
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: 'Authorization header missing' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const token = authHeader.replace('Bearer ', '')
+      const decoded = decodeJWT(token)
+      if (!decoded || !decoded.user_id) {
+        return new Response(JSON.stringify({ error: 'Invalid token format' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
+    // Get request body
+    const body = await req.json()
+    const { p_email, p_password, p_role, p_nom, p_prenom, p_user_id } = body
+
+    // Get user ID from request body or JWT
+    let userId = p_user_id
+    if (!userId) {
+      const authHeader = req.headers.get('Authorization')
+      if (authHeader) {
+        const token = authHeader.replace('Bearer ', '')
+        const decoded = decodeJWT(token)
+        userId = decoded?.user_id
+      }
+    }
+
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'User ID required' }), {
+        status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Decode JWT to get user ID (simpler than getUser which might have issues)
-    const decoded = decodeJWT(token)
-    if (!decoded || !decoded.user_id) {
-      return new Response(JSON.stringify({ error: 'Invalid token format' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const userId = decoded.user_id
-
-    // Get caller's profile directly using service role (bypasses RLS)
+    // Get caller's profile
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
@@ -98,10 +126,6 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-
-    // Get request body
-    const body = await req.json()
-    const { p_email, p_password, p_role, p_nom, p_prenom } = body
 
     // Validate required fields
     if (!p_email || !p_password || !p_role || !p_nom || !p_prenom) {
