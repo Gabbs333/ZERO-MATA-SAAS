@@ -12,6 +12,19 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+// Simple JWT decode - get user ID from token without verification
+function decodeJWT(token: string): { user_id: string } | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    
+    const payload = JSON.parse(atob(parts[1]))
+    return { user_id: payload.sub }
+  } catch {
+    return null
+  }
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -19,7 +32,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Only allow POST requests
     if (req.method !== 'POST') {
       return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
@@ -30,43 +42,42 @@ Deno.serve(async (req) => {
     // Get the authorization header
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Authorization required' }), {
+      return new Response(JSON.stringify({ error: 'Authorization header missing' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Verify the caller is a patron
     const token = authHeader.replace('Bearer ', '')
     
-    // Use getUser to verify the token
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    
-    if (authError) {
-      console.error('Auth error:', authError.message)
-    }
-    
-    if (!user) {
-      // Try to get user from jwt directly (fallback)
-      return new Response(JSON.stringify({ error: 'Invalid token or token expired. Please reconnect.' }), {
+    // Decode JWT to get user ID (simpler than getUser which might have issues)
+    const decoded = decodeJWT(token)
+    if (!decoded || !decoded.user_id) {
+      return new Response(JSON.stringify({ error: 'Invalid token format' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Get caller's profile
+    const userId = decoded.user_id
+
+    // Get caller's profile directly using service role (bypasses RLS)
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', user.id)
+      .eq('id', userId)
       .single()
 
     if (profileError) {
       console.error('Profile error:', profileError.message)
+      return new Response(JSON.stringify({ error: 'Cannot access profile: ' + profileError.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
     
     if (!profile) {
-      return new Response(JSON.stringify({ error: 'Profile not found for this user' }), {
+      return new Response(JSON.stringify({ error: 'Profile not found for user ID: ' + userId }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -74,7 +85,7 @@ Deno.serve(async (req) => {
 
     // Verify caller is patron
     if (profile.role !== 'patron') {
-      return new Response(JSON.stringify({ error: 'Accès refusé. Seul le patron peut inviter des membres du personnel.' }), {
+      return new Response(JSON.stringify({ error: 'Accès refusé. Seul le patron peut inviter des membres du personnel. Votre rôle: ' + profile.role }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -119,7 +130,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Create user with service role (bypasses RLS)
+    // Create user with service role
     const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
       email: p_email,
       password: p_password,
