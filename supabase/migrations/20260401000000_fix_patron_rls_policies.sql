@@ -1,9 +1,6 @@
 -- Migration: Fix handle_new_user trigger and patron profile insertion
 -- Description: Fixes the user creation flow to properly set etablissement_id and allows patron to create staff profiles
 
--- Enable pgcrypto extension for password hashing
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
 -- ============================================================================
 -- FIX 1: Update handle_new_user trigger to set etablissement_id
 -- ============================================================================
@@ -27,7 +24,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
 -- FIX 2: Create function for patron to invite staff members
--- Uses pgcrypto extension for password hashing
+-- Uses Supabase's internal admin API - requires service_role key
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.patron_invite_staff(
@@ -46,6 +43,7 @@ DECLARE
   new_user_id UUID;
   caller_etablissement_id UUID;
   caller_role TEXT;
+  v_password_hash TEXT;
 BEGIN
   -- Get the caller's profile
   SELECT p.etablissement_id, p.role INTO caller_etablissement_id, caller_role
@@ -68,55 +66,30 @@ BEGIN
   END IF;
   
   -- Check if user already exists
-  IF (SELECT id FROM auth.users WHERE email = p_email) IS NOT NULL THEN
+  SELECT id INTO new_user_id FROM auth.users WHERE email = p_email;
+  IF new_user_id IS NOT NULL THEN
     RAISE EXCEPTION 'Un utilisateur avec cet email existe déjà.';
   END IF;
   
-  -- Insert directly into auth.users
-  INSERT INTO auth.users (
-    instance_id,
-    id,
-    aud,
-    role,
-    email,
-    encrypted_password,
-    email_confirmed_at,
-    raw_app_meta_data,
-    raw_user_meta_data,
-    created_at,
-    updated_at,
-    confirmation_token,
-    email_change,
-    email_change_token_new,
-    recovery_token
-  )
-  values (
-    '00000000-0000-0000-0000-000000000000',
-    gen_random_uuid(),
-    'authenticated',
-    'authenticated',
-    p_email,
-    crypt(p_password, gen_salt('bf')),
-    now(),
-    '{"provider":"email","providers":["email"]}',
+  -- Use Supabase's auth internal function to create user
+  -- This is the proper way to create users in Supabase
+  SELECT public.auth.create_user(
     jsonb_build_object(
-      'role', p_role,
-      'nom', p_nom,
-      'prenom', p_prenom,
-      'etablissement_id', caller_etablissement_id::text
-    ),
-    now(),
-    now(),
-    '',
-    '',
-    '',
-    ''
-  )
-  RETURNING id into new_user_id;
+      'email', p_email,
+      'password', p_password,
+      'email_confirm', true,
+      'user_metadata', jsonb_build_object(
+        'role', p_role,
+        'nom', p_nom,
+        'prenom', p_prenom,
+        'etablissement_id', caller_etablissement_id::text
+      )
+    )
+  )::uuid INTO new_user_id;
   
   RETURN new_user_id;
 EXCEPTION
-  WHEN unique_violation THEN
+  WHEN duplicate_object THEN
     RAISE EXCEPTION 'Un utilisateur avec cet email existe déjà.';
 END;
 $$;
@@ -176,12 +149,6 @@ COMMENT ON POLICY "gerant_patron_insert_mouvements_stock" ON mouvements_stock IS
 
 -- The main fixes applied:
 -- 1. handle_new_user now sets etablissement_id from raw_user_meta_data
--- 2. New patron_invite_staff function for patrons to create staff accounts
+-- 2. New patron_invite_staff function using Supabase auth.create_user
 -- 3. patron_insert_establishment_profiles policy now explicitly validates etablissement_id
 -- 4. gerant_patron_insert_mouvements_stock policy now validates etablissement_id
--- 5. Added pgcrypto extension for password hashing
-
--- This should resolve the issues where:
--- - Creating staff member accounts fails due to RLS policy denial
--- - Stock modifications fail due to etablissement_id validation issues
--- - The "vous n'avez pas les accès admins autorisés" message appears incorrectly
