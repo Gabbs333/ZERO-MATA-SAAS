@@ -2,7 +2,24 @@
 -- Resolves issues with staff creation and stock modification
 
 -- ============================================================================
--- PART 1: Fix stocks table - ensure etablissement_id column exists
+-- PART 1: Create get_user_etablissement_id function if it doesn't exist
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.get_user_etablissement_id()
+RETURNS UUID
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = ''
+AS $
+  SELECT etablissement_id FROM public.profiles WHERE id = auth.uid();
+$;
+
+COMMENT ON FUNCTION public.get_user_etablissement_id IS 
+'Returns the etablissement_id of the currently authenticated user (NULL for admin users)';
+
+-- ============================================================================
+-- PART 2: Fix stocks table - ensure etablissement_id column exists
 -- ============================================================================
 
 -- Rename stock to stocks if it exists (handle the plural/singular inconsistency)
