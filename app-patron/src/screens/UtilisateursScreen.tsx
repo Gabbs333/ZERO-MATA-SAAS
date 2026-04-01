@@ -72,7 +72,10 @@ export function UtilisateursScreen() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile?.etablissement_id) return;
+    if (!profile?.etablissement_id) {
+      alert('Erreur: Votre profil n\'est pas lié à un établissement. Veuillez vous reconnecter.');
+      return;
+    }
     setIsSubmitting(true);
 
     try {
@@ -87,22 +90,47 @@ export function UtilisateursScreen() {
           })
           .eq('id', editingUser.id);
         
-        if (error) throw error;
-        alert('User updated successfully');
+        if (error) {
+          console.error('Update error:', error);
+          throw new Error(error.message);
+        }
+        alert('Utilisateur mis à jour avec succès');
       } else {
-        // Create new user
-        // Note: Client-side user creation requires calling an Edge Function or having a specific flow.
-        // Here we simulate the profile creation for UI demonstration, 
-        // but in reality this needs backend support to create the Auth User.
-        alert('User creation requires Admin privileges or backend function. Feature coming soon.');
-        // Ideally: await supabase.functions.invoke('create-user', { body: { ...formData, etablissement_id: profile.etablissement_id } })
+        // Create new user using the patron_invite_staff RPC function
+        console.log('Creating user with:', {
+          p_email: formData.email,
+          p_role: formData.role,
+          p_nom: formData.nom,
+          p_prenom: formData.prenom
+        });
+        
+        const { data, error: createError } = await supabase.rpc('patron_invite_staff', {
+          p_email: formData.email,
+          p_password: formData.password,
+          p_role: formData.role,
+          p_nom: formData.nom,
+          p_prenom: formData.prenom
+        });
+        
+        if (createError) {
+          console.error('RPC Error creating user:', createError);
+          throw new Error(createError.message || 'Erreur RPC lors de la création');
+        }
+        
+        console.log('RPC Response:', data);
+        
+        if (data) {
+          alert('Membre du personnel créé avec succès! Il peut maintenant se connecter avec ses identifiants.');
+        } else {
+          throw new Error('Erreur lors de la création du membre du personnel - pas de réponse du serveur');
+        }
       }
       
       setIsModalOpen(false);
       refetch();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving user:', error);
-      alert('Error saving user');
+      alert(error.message || 'Erreur lors de l\'enregistrement du membre du personnel');
     } finally {
       setIsSubmitting(false);
     }

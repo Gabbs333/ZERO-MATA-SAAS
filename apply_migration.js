@@ -14,7 +14,7 @@ async function runMigration() {
     await client.connect();
     console.log('Connected to database');
 
-    const migrationPath = path.join(__dirname, 'supabase/migrations/20260216000000_dashboard_new_rpcs.sql');
+    const migrationPath = path.join(__dirname, 'supabase/migrations/20260401000000_fix_patron_rls_policies.sql');
     const sql = fs.readFileSync(migrationPath, 'utf8');
 
     console.log('Executing migration...');
