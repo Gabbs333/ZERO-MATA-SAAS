@@ -1,97 +1,120 @@
--- Function to create a user (only accessible by admins)
--- Uses Supabase auth.admin API instead of direct auth.users insert
-create or replace function admin_create_user(
-  p_email text,
-  p_password text,
-  p_role text,
-  p_etablissement_id uuid,
-  p_nom text,
-  p_prenom text
-)
-returns uuid
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  new_user_id uuid;
-  check_role text;
-begin
-  -- Check if caller is admin
-  select role into check_role from public.profiles where id = auth.uid();
-  if check_role != 'admin' then
-    raise exception 'Unauthorized: Only admins can create users';
-  end if;
+-- Migration: Admin user management functions
+-- Description: Functions for admin to manage users (requires service role key from frontend)
+-- Note: Actual user creation is done via supabase.auth.admin.createUser() in the frontend
+-- This file only contains helper functions that may be used with service role
 
-  -- Use Supabase auth.admin to create user
-  -- This is the recommended approach that handles password hashing properly
-  new_user_id := (auth.admin.create_user(
-    p_email => p_email,
-    p_password => p_password,
-    p_email_confirm => true,
-    p_raw_user_meta_data => jsonb_build_object(
-      'role', p_role,
-      'nom', p_nom,
-      'prenom', p_prenom,
-      'etablissement_id', p_etablissement_id
-    )
-  )).id;
+-- ============================================================================
+-- Function: Get caller profile info (used by other functions)
+-- ============================================================================
 
-  -- Update profile with correct etablissement_id
-  update public.profiles
-  set etablissement_id = p_etablissement_id
-  where id = new_user_id;
-  
-  return new_user_id;
-exception
-  when duplicate_object then
-    raise exception 'User with this email already exists';
-end;
+CREATE OR REPLACE FUNCTION public.get_caller_profile()
+RETURNS TABLE(id UUID, email TEXT, nom TEXT, prenom TEXT, role TEXT, etablissement_id UUID, actif BOOLEAN)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    p.id,
+    p.email,
+    p.nom,
+    p.prenom,
+    p.role,
+    p.etablissement_id,
+    p.actif
+  FROM public.profiles p
+  WHERE p.id = auth.uid();
+END;
 $$;
 
--- Create function for admin to manage establishment users
--- This is used by admin dashboard to create users in specific establishments
-create or replace function admin_invite_establishment_user(
-  p_email text,
-  p_password text,
-  p_role text,
-  p_etablissement_id uuid,
-  p_nom text,
-  p_prenom text
-)
-returns uuid
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  new_user_id uuid;
-  caller_role text;
-begin
-  -- Check if caller is admin
-  select role into caller_role from public.profiles where id = auth.uid();
-  if caller_role != 'admin' then
-    raise exception 'Unauthorized: Only admins can create users';
-  end if;
+-- ============================================================================
+-- Function: Verify if user is patron in their establishment
+-- ============================================================================
 
-  -- Verify establishment exists
-  if not exists (select 1 from etablissements where id = p_etablissement_id) then
-    raise exception 'Establishment not found';
-  end if;
-
-  -- Use admin_create_user
-  new_user_id := public.admin_create_user(
-    p_email,
-    p_password,
-    p_role,
-    p_etablissement_id,
-    p_nom,
-    p_prenom
+CREATE OR REPLACE FUNCTION public.is_patron_in_establishment(p_etablissement_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT;
+  v_actif BOOLEAN;
+  v_etablissement_id UUID;
+BEGIN
+  SELECT p.role, p.actif, p.etablissement_id 
+  INTO v_role, v_actif, v_etablissement_id
+  FROM public.profiles p
+  WHERE p.id = auth.uid();
+  
+  RETURN (
+    v_role = 'patron' 
+    AND v_actif = true 
+    AND v_etablissement_id = p_etablissement_id
   );
-  
-  return new_user_id;
-end;
+END;
 $$;
 
-comment on function admin_create_user is 'Creates a new user with hashed password using Supabase auth.admin API';
-comment on function admin_invite_establishment_user is 'Allows admin to invite users to a specific establishment';
+COMMENT ON FUNCTION public.is_patron_in_establishment IS 'Checks if current user is an active patron for the given establishment';
+
+-- ============================================================================
+-- Function: Verify if user is admin
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role TEXT;
+BEGIN
+  SELECT p.role INTO v_role
+  FROM public.profiles p
+  WHERE p.id = auth.uid();
+  
+  RETURN (v_role = 'admin');
+END;
+$$;
+
+COMMENT ON FUNCTION public.is_admin IS 'Checks if current user has admin role';
+
+-- ============================================================================
+-- Function: Get all users in an establishment (for patron dashboard)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.get_establishment_users(p_etablissement_id UUID)
+RETURNS TABLE(id UUID, email TEXT, nom TEXT, prenom TEXT, role TEXT, actif BOOLEAN)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- Check if caller is patron in this establishment
+  IF NOT public.is_patron_in_establishment(p_etablissement_id) THEN
+    RAISE EXCEPTION 'Accès refusé. Vous devez être le patron de cet établissement.';
+  END IF;
+  
+  RETURN QUERY
+  SELECT 
+    p.id,
+    p.email,
+    p.nom,
+    p.prenom,
+    p.role,
+    p.actif
+  FROM public.profiles p
+  WHERE p.etablissement_id = p_etablissement_id
+  ORDER BY p.role, p.nom;
+END;
+$$;
+
+COMMENT ON FUNCTION public.get_establishment_users IS 'Returns all users in an establishment (patron only)';
+
+-- ============================================================================
+-- NOTE: User creation should be handled by the frontend using supabase.auth.admin.createUser()
+-- with service role key. The createUser function cannot be called directly from SQL in Supabase
+-- because auth.admin is not accessible from within database functions.
+-- ============================================================================

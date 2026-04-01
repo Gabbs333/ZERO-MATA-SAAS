@@ -1,57 +1,8 @@
--- Migration: Fix handle_new_user trigger and patron profile insertion
--- Description: Fixes the user creation flow to properly set etablissement_id and allows patron to create staff profiles
+-- Migration: Fix handle_new_user trigger and patron RLS policies
+-- Description: Fixes for user creation and access control without using auth.admin from SQL
 
 -- ============================================================================
--- PART 1: Create admin_create_user function using Supabase auth.admin API
--- ============================================================================
-
--- Function to create a user (only accessible by admins)
--- This function is needed by patron_invite_staff
--- Uses Supabase auth.admin API instead of direct auth.users insert
-CREATE OR REPLACE FUNCTION public.admin_create_user(
-  p_email TEXT,
-  p_password TEXT,
-  p_role TEXT,
-  p_etablissement_id UUID,
-  p_nom TEXT,
-  p_prenom TEXT
-)
-RETURNS UUID
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  new_user_id UUID;
-BEGIN
-  -- Use Supabase auth.admin to create user
-  -- This is the recommended approach that handles password hashing properly
-  new_user_id := (auth.admin.create_user(
-    p_email => p_email,
-    p_password => p_password,
-    p_email_confirm => true,
-    p_raw_user_meta_data => jsonb_build_object(
-      'role', p_role,
-      'nom', p_nom,
-      'prenom', p_prenom,
-      'etablissement_id', p_etablissement_id
-    )
-  )).id;
-
-  -- Update profile with correct etablissement_id
-  UPDATE public.profiles
-  SET etablissement_id = p_etablissement_id
-  WHERE id = new_user_id;
-  
-  RETURN new_user_id;
-EXCEPTION
-  WHEN duplicate_object THEN
-    RAISE EXCEPTION 'User with this email already exists';
-END;
-$$;
-
--- ============================================================================
--- FIX 2: Update handle_new_user trigger to set etablissement_id
+-- PART 1: Update handle_new_user trigger to set etablissement_id
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -72,73 +23,28 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
--- FIX 3: Create function for patron to invite staff members
--- Uses admin_create_user which has proper permissions
+-- PART 2: Allow patrons to read profiles in their establishment
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION public.patron_invite_staff(
-  p_email TEXT,
-  p_password TEXT,
-  p_role TEXT,
-  p_nom TEXT,
-  p_prenom TEXT
-)
-RETURNS UUID
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  new_user_id UUID;
-  caller_etablissement_id UUID;
-  caller_role TEXT;
-BEGIN
-  -- Get the caller's profile
-  SELECT p.etablissement_id, p.role INTO caller_etablissement_id, caller_role
-  FROM public.profiles p
-  WHERE p.id = auth.uid();
-  
-  -- Verify caller is a patron
-  IF caller_role != 'patron' THEN
-    RAISE EXCEPTION 'Accès refusé. Seul le patron peut inviter des membres du personnel.';
-  END IF;
-  
-  -- Verify caller has an establishment
-  IF caller_etablissement_id IS NULL THEN
-    RAISE EXCEPTION 'Votre compte n''est lié à aucun établissement.';
-  END IF;
-  
-  -- Validate role
-  IF p_role NOT IN ('serveuse', 'comptoir', 'gerant') THEN
-    RAISE EXCEPTION 'Rôle invalide. Les rôles autorisés sont: serveuse, comptoir, gerant';
-  END IF;
-  
-  -- Check if user already exists
-  IF EXISTS (SELECT 1 FROM auth.users WHERE email = p_email) THEN
-    RAISE EXCEPTION 'Un utilisateur avec cet email existe déjà.';
-  END IF;
-  
-  -- Call admin_create_user function
-  new_user_id := public.admin_create_user(
-    p_email,
-    p_password,
-    p_role,
-    caller_etablissement_id,
-    p_nom,
-    p_prenom
+DROP POLICY IF EXISTS "patron_read_establishment_profiles" ON profiles;
+
+CREATE POLICY "patron_read_establishment_profiles"
+  ON profiles FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles p
+      WHERE p.id = auth.uid()
+      AND p.role = 'patron'
+      AND p.actif = true
+      AND p.etablissement_id = profiles.etablissement_id
+    )
   );
-  
-  RETURN new_user_id;
-EXCEPTION
-  WHEN duplicate_object THEN
-    RAISE EXCEPTION 'Un utilisateur avec cet email existe déjà.';
-END;
-$$;
-
-COMMENT ON FUNCTION public.patron_invite_staff IS 'Allows patron to invite staff members to their establishment';
 
 -- ============================================================================
--- FIX 4: Allow patrons to create profiles in their establishment
+-- PART 3: Allow patrons to create staff profiles in their establishment
+-- Note: User creation should be handled by the frontend using supabase.auth.admin.createUser()
+-- This policy allows the patron to insert profile records directly (after user is created in auth)
 -- ============================================================================
 
 DROP POLICY IF EXISTS "patron_insert_establishment_profiles" ON profiles;
@@ -147,22 +53,22 @@ CREATE POLICY "patron_insert_establishment_profiles"
   ON profiles FOR INSERT
   TO authenticated
   WITH CHECK (
+    -- User can always insert their own profile (during signup)
     id = (SELECT auth.uid())
     OR (
+      -- Or patron can create staff profiles in their establishment
       EXISTS (
         SELECT 1 FROM public.profiles p
         WHERE p.id = (SELECT auth.uid())
         AND p.role = 'patron'
         AND p.actif = true
-        AND p.etablissement_id = profiles.etablissement_id
+        AND p.etablissement_id = (SELECT auth.jwt()::jsonb->>'etablissement_id'::uuid)
       )
-      AND profiles.etablissement_id IS NOT NULL
-      AND profiles.etablissement_id = (SELECT p.etablissement_id FROM public.profiles p WHERE p.id = (SELECT auth.uid()))
     )
   );
 
 -- ============================================================================
--- FIX 5: Fix mouvements_stock insertion for manual adjustments
+-- PART 4: Fix mouvements_stock insertion for manual adjustments
 -- ============================================================================
 
 DROP POLICY IF EXISTS "gerant_patron_insert_mouvements_stock" ON mouvements_stock;
@@ -185,12 +91,50 @@ COMMENT ON POLICY "gerant_patron_insert_mouvements_stock" ON mouvements_stock IS
 'Multi-tenant: Gerant and Patron can insert stock movements in their establishment';
 
 -- ============================================================================
+-- PART 5: Fix stock table access for patron
+-- ============================================================================
+
+DROP POLICY IF EXISTS "patron_select_stock" ON stock;
+
+CREATE POLICY "patron_select_stock"
+  ON stock FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles p
+      WHERE p.id = auth.uid()
+      AND p.role IN ('gerant', 'patron')
+      AND p.actif = true
+      AND p.etablissement_id = stock.etablissement_id
+    )
+  );
+
+DROP POLICY IF EXISTS "patron_update_stock" ON stock;
+
+CREATE POLICY "patron_update_stock"
+  ON stock FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles p
+      WHERE p.id = auth.uid()
+      AND p.role IN ('gerant', 'patron')
+      AND p.actif = true
+      AND p.etablissement_id = stock.etablissement_id
+    )
+  );
+
+-- ============================================================================
 -- SUMMARY
 -- ============================================================================
 
 -- The main fixes applied:
--- 1. admin_create_user function created using Supabase auth.admin API
--- 2. handle_new_user now sets etablissement_id from raw_user_meta_data
--- 3. patron_invite_staff uses admin_create_user 
--- 4. patron_insert_establishment_profiles policy validated
--- 5. mouvements_stock RLS policy validated
+-- 1. handle_new_user now sets etablissement_id from raw_user_meta_data
+-- 2. patron_read_establishment_profiles - allow patron to see staff
+-- 3. patron_insert_establishment_profiles - allow patron to create staff profiles
+-- 4. mouvements_stock RLS policy validated
+-- 5. stock RLS policies for patron access
+
+-- IMPORTANT: User creation should be handled by the frontend app
+-- using supabase.auth.admin.createUser() with service role or admin privileges
+-- The patron_invite_staff function should be implemented as an Edge Function instead
