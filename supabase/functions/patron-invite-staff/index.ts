@@ -5,13 +5,25 @@ const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 
+// CORS headers for all responses
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 Deno.serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders })
+  }
+
   try {
     // Only allow POST requests
     if (req.method !== 'POST') {
       return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -20,7 +32,7 @@ Deno.serve(async (req) => {
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Authorization required' }), {
         status: 401,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -31,7 +43,7 @@ Deno.serve(async (req) => {
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -45,7 +57,7 @@ Deno.serve(async (req) => {
     if (profileError || !profile) {
       return new Response(JSON.stringify({ error: 'Profile not found' }), {
         status: 404,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -53,7 +65,7 @@ Deno.serve(async (req) => {
     if (profile.role !== 'patron') {
       return new Response(JSON.stringify({ error: 'Accès refusé. Seul le patron peut inviter des membres du personnel.' }), {
         status: 403,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -61,7 +73,7 @@ Deno.serve(async (req) => {
     if (!profile.etablissement_id) {
       return new Response(JSON.stringify({ error: 'Votre compte n\'est lié à aucun établissement.' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -72,7 +84,7 @@ Deno.serve(async (req) => {
     if (!p_email || !p_password || !p_role || !p_nom || !p_prenom) {
       return new Response(JSON.stringify({ error: 'Tous les champs sont requis.' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -80,7 +92,7 @@ Deno.serve(async (req) => {
     if (!['serveuse', 'comptoir', 'gerant'].includes(p_role)) {
       return new Response(JSON.stringify({ error: 'Rôle invalide. Les rôles autorisés sont: serveuse, comptoir, gerant' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -91,7 +103,7 @@ Deno.serve(async (req) => {
     if (userExists) {
       return new Response(JSON.stringify({ error: 'Un utilisateur avec cet email existe déjà.' }), {
         status: 409,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -112,14 +124,14 @@ Deno.serve(async (req) => {
       console.error('Error creating user:', createUserError)
       return new Response(JSON.stringify({ error: createUserError.message }), {
         status: 500,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
     if (!newUser.user) {
       return new Response(JSON.stringify({ error: 'Erreur lors de la création de l\'utilisateur' }), {
         status: 500,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -146,14 +158,14 @@ Deno.serve(async (req) => {
       message: 'Membre du personnel créé avec succès'
     }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
 
   } catch (error) {
     console.error('Unexpected error:', error)
     return new Response(JSON.stringify({ error: 'Erreur serveur interne' }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
 })
