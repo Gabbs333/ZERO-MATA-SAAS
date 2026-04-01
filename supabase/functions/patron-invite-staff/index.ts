@@ -38,10 +38,17 @@ Deno.serve(async (req) => {
 
     // Verify the caller is a patron
     const token = authHeader.replace('Bearer ', '')
+    
+    // Use getUser to verify the token
     const { data: { user }, error: authError } = await supabase.auth.getUser(token)
     
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
+    if (authError) {
+      console.error('Auth error:', authError.message)
+    }
+    
+    if (!user) {
+      // Try to get user from jwt directly (fallback)
+      return new Response(JSON.stringify({ error: 'Invalid token or token expired. Please reconnect.' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -54,8 +61,12 @@ Deno.serve(async (req) => {
       .eq('id', user.id)
       .single()
 
-    if (profileError || !profile) {
-      return new Response(JSON.stringify({ error: 'Profile not found' }), {
+    if (profileError) {
+      console.error('Profile error:', profileError.message)
+    }
+    
+    if (!profile) {
+      return new Response(JSON.stringify({ error: 'Profile not found for this user' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -78,7 +89,8 @@ Deno.serve(async (req) => {
     }
 
     // Get request body
-    const { p_email, p_password, p_role, p_nom, p_prenom } = await req.json()
+    const body = await req.json()
+    const { p_email, p_password, p_role, p_nom, p_prenom } = body
 
     // Validate required fields
     if (!p_email || !p_password || !p_role || !p_nom || !p_prenom) {
@@ -98,7 +110,7 @@ Deno.serve(async (req) => {
 
     // Check if user already exists
     const { data: existingUser } = await supabase.auth.admin.listUsers()
-    const userExists = existingUser.users.some(u => u.email === p_email)
+    const userExists = existingUser.users.some((u: any) => u.email === p_email)
     
     if (userExists) {
       return new Response(JSON.stringify({ error: 'Un utilisateur avec cet email existe déjà.' }), {
@@ -148,8 +160,7 @@ Deno.serve(async (req) => {
       .eq('id', newUser.user.id)
 
     if (updateError) {
-      console.error('Error updating profile:', updateError)
-      // User was created, just log the error
+      console.error('Error updating profile:', updateError.message)
     }
 
     return new Response(JSON.stringify({ 
@@ -163,7 +174,8 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('Unexpected error:', error)
-    return new Response(JSON.stringify({ error: 'Erreur serveur interne' }), {
+    const errorMessage = error instanceof Error ? error.message : 'Erreur serveur interne'
+    return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
