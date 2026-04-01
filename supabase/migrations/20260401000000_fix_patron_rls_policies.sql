@@ -62,8 +62,12 @@ CREATE POLICY "patron_insert_establishment_profiles"
         WHERE p.id = (SELECT auth.uid())
         AND p.role = 'patron'
         AND p.actif = true
-        AND p.etablissement_id = (SELECT auth.jwt()::jsonb->>'etablissement_id'::uuid)
       )
+      AND (
+        -- The new profile's etablissement_id must match the patron's etablissement_id
+        -- We use a subquery to get the caller's etablissement_id
+        SELECT p.etablissement_id FROM public.profiles p WHERE p.id = (SELECT auth.uid())
+      ) = profiles.etablissement_id
     )
   );
 
