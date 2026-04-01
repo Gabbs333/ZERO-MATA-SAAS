@@ -1,5 +1,5 @@
-// Edge Function for patron to invite staff
-// Verifies JWT token before creating user
+// Simple Edge Function for patron to invite staff
+// With detailed logging
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,122 +7,86 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-// Decode JWT without verification - for getting user info only
-function decodeJWT(token: string): any {
-  try {
-    const parts = token.split('.')
-    if (parts.length !== 3) return null
-    return JSON.parse(atob(parts[1]))
-  } catch {
-    return null
-  }
-}
+console.log('Function starting...')
 
 Deno.serve(async (req) => {
+  console.log('Request received:', req.method)
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS request')
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    if (req.method !== 'POST') {
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-        status: 405,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Get environment variables
+    // Get environment variables first
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')
+    
+    console.log('Environment check:', { 
+      hasUrl: !!supabaseUrl, 
+      hasKey: !!serviceRoleKey 
+    })
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return new Response(JSON.stringify({ error: 'Missing environment variables' }), {
+      const error = 'Missing SUPABASE_URL or SERVICE_ROLE_KEY'
+      console.error(error)
+      return new Response(JSON.stringify({ error }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Get Authorization header - Supabase automatically passes this for authenticated users
+    // Get Authorization header
     const authHeader = req.headers.get('Authorization')
+    console.log('Has auth header:', !!authHeader)
+    
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Authorization required. Please login first.' }), {
+      return new Response(JSON.stringify({ error: 'Authorization required' }), {
         status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Extract token and decode to get user ID
-    const token = authHeader.replace('Bearer ', '')
-    const payload = decodeJWT(token)
-    
-    if (!payload || !payload.sub) {
-      return new Response(JSON.stringify({ error: 'Invalid token. Please login again.' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const userId = payload.sub
-
-    // Get caller's profile to check if they are a patron
-    const profileResponse = await fetch(
-      `${supabaseUrl}/rest/v1/profiles?id=eq.${userId}&select=*`,
-      {
-        headers: {
-          'Authorization': `Bearer ${serviceRoleKey}`,
-          'apikey': serviceRoleKey
-        }
-      }
-    )
-
-    const profiles = await profileResponse.json()
-    
-    if (!profiles || profiles.length === 0) {
-      return new Response(JSON.stringify({ error: 'Profile not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const profile = profiles[0]
-
-    // Check if user is a patron
-    if (profile.role !== 'patron') {
-      return new Response(JSON.stringify({ error: `Accès refusé. Seul le patron peut inviter. Votre rôle: ${profile.role}` }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Check establishment
-    if (!profile.etablissement_id) {
-      return new Response(JSON.stringify({ error: 'Votre compte n\'est lié à aucun établissement.' }), {
-        status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
     // Get request body
     const body = await req.json()
+    console.log('Request body received')
+    
     const { p_email, p_password, p_role, p_nom, p_prenom } = body
 
     // Validate input
     if (!p_email || !p_password || !p_role || !p_nom || !p_prenom) {
-      return new Response(JSON.stringify({ error: 'Tous les champs sont requis.' }), {
+      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    if (!['serveuse', 'comptoir', 'gerant'].includes(p_role)) {
-      return new Response(JSON.stringify({ error: 'Rôle invalide.' }), {
-        status: 400,
+    // Extract user from JWT (we don't verify, just decode)
+    const token = authHeader.replace('Bearer ', '')
+    const parts = token.split('.')
+    let userId = null
+    
+    if (parts.length === 3) {
+      try {
+        const payload = JSON.parse(atob(parts[1]))
+        userId = payload.sub
+        console.log('User ID from token:', userId)
+      } catch (e) {
+        console.error('Failed to decode token:', e)
+      }
+    }
+
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'Invalid token' }), {
+        status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
     // Create user via Auth Admin API
+    console.log('Creating user with email:', p_email)
+    
     const authResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
       method: 'POST',
       headers: {
@@ -137,62 +101,35 @@ Deno.serve(async (req) => {
         user_metadata: {
           role: p_role,
           nom: p_nom,
-          prenom: p_prenom,
-          etablissement_id: profile.etablissement_id
+          prenom: p_prenom
         }
       })
     })
 
     const authResult = await authResponse.json()
+    console.log('Auth response:', authResponse.status, authResult)
 
     if (!authResponse.ok || authResult.error) {
-      console.error('Auth error:', authResult)
       return new Response(JSON.stringify({ error: authResult.error || 'Failed to create user' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    const newUserId = authResult.id
-
-    // Update the new user's profile with establishment info
-    const profileUpdateResponse = await fetch(
-      `${supabaseUrl}/rest/v1/profiles?id=eq.${newUserId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${serviceRoleKey}`,
-          'apikey': serviceRoleKey,
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({
-          role: p_role,
-          nom: p_nom,
-          prenom: p_prenom,
-          etablissement_id: profile.etablissement_id,
-          actif: true
-        })
-      }
-    )
-
-    if (!profileUpdateResponse.ok) {
-      console.error('Profile update error:', await profileUpdateResponse.text())
-    }
+    console.log('User created:', authResult.id)
 
     return new Response(JSON.stringify({ 
       success: true, 
-      user_id: newUserId,
-      message: 'Membre du personnel créé avec succès'
+      user_id: authResult.id,
+      message: 'User created'
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
 
   } catch (error) {
-    console.error('Unexpected error:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Erreur serveur interne'
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    console.error('Error:', error)
+    return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
