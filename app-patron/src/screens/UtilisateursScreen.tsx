@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
-import { supabase, patronInviteStaffUrl } from '../config/supabase';
+import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import { UserPlus, Search, Edit, UserX, X } from 'lucide-react';
 import type { Profile } from '../types/database.types';
@@ -96,7 +96,7 @@ export function UtilisateursScreen() {
         }
         alert('Utilisateur mis à jour avec succès');
       } else {
-        // Create new user using the patron-invite-staff Edge Function
+        // Create new user using the patron_invite_staff RPC function
         console.log('Creating user with:', {
           p_email: formData.email,
           p_role: formData.role,
@@ -104,42 +104,26 @@ export function UtilisateursScreen() {
           p_prenom: formData.prenom
         });
         
-        // Get the current session
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          throw new Error('Session expiré. Veuillez vous reconnecter.');
-        }
-        
-        // Call the Edge Function using fetch
-        const response = await fetch(patronInviteStaffUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({
-            p_email: formData.email,
-            p_password: formData.password,
-            p_role: formData.role,
-            p_nom: formData.nom,
-            p_prenom: formData.prenom,
-            p_user_id: session.user.id
-          })
+        // Use RPC to call the database function
+        const { data, error: createError } = await supabase.rpc('patron_invite_staff', {
+          p_email: formData.email,
+          p_password: formData.password,
+          p_role: formData.role,
+          p_nom: formData.nom,
+          p_prenom: formData.prenom
         });
         
-        const result = await response.json();
-        
-        if (!response.ok || result.error) {
-          console.error('Edge Function Error:', result.error || response.statusText);
-          throw new Error(result.error || 'Erreur lors de la création du membre du personnel');
+        if (createError) {
+          console.error('RPC Error creating user:', createError);
+          throw new Error(createError.message || 'Erreur lors de la création');
         }
         
-        console.log('Edge Function Response:', result);
+        console.log('RPC Response:', data);
         
-        if (result.success) {
+        if (data && data.includes('succès')) {
           alert('Membre du personnel créé avec succès! Il peut maintenant se connecter avec ses identifiants.');
         } else {
-          throw new Error('Erreur lors de la création du membre du personnel');
+          throw new Error(data || 'Erreur lors de la création');
         }
       }
       
