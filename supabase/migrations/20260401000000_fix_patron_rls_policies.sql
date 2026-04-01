@@ -1,5 +1,5 @@
 -- Migration: Fix handle_new_user trigger and patron RLS policies
--- Description: Fixes for user creation and access control without using auth.admin from SQL
+-- Description: Fixes for user creation and access control
 
 -- ============================================================================
 -- PART 1: Update handle_new_user trigger to set etablissement_id
@@ -65,7 +65,6 @@ CREATE POLICY "patron_insert_establishment_profiles"
       )
       AND (
         -- The new profile's etablissement_id must match the patron's etablissement_id
-        -- We use a subquery to get the caller's etablissement_id
         SELECT p.etablissement_id FROM public.profiles p WHERE p.id = (SELECT auth.uid())
       ) = profiles.etablissement_id
     )
@@ -95,40 +94,6 @@ COMMENT ON POLICY "gerant_patron_insert_mouvements_stock" ON mouvements_stock IS
 'Multi-tenant: Gerant and Patron can insert stock movements in their establishment';
 
 -- ============================================================================
--- PART 5: Fix stock table access for patron
--- ============================================================================
-
-DROP POLICY IF EXISTS "patron_select_stock" ON stock;
-
-CREATE POLICY "patron_select_stock"
-  ON stock FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles p
-      WHERE p.id = auth.uid()
-      AND p.role IN ('gerant', 'patron')
-      AND p.actif = true
-      AND p.etablissement_id = stock.etablissement_id
-    )
-  );
-
-DROP POLICY IF EXISTS "patron_update_stock" ON stock;
-
-CREATE POLICY "patron_update_stock"
-  ON stock FOR UPDATE
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles p
-      WHERE p.id = auth.uid()
-      AND p.role IN ('gerant', 'patron')
-      AND p.actif = true
-      AND p.etablissement_id = stock.etablissement_id
-    )
-  );
-
--- ============================================================================
 -- SUMMARY
 -- ============================================================================
 
@@ -137,7 +102,6 @@ CREATE POLICY "patron_update_stock"
 -- 2. patron_read_establishment_profiles - allow patron to see staff
 -- 3. patron_insert_establishment_profiles - allow patron to create staff profiles
 -- 4. mouvements_stock RLS policy validated
--- 5. stock RLS policies for patron access
 
 -- IMPORTANT: User creation should be handled by the frontend app
 -- using supabase.auth.admin.createUser() with service role or admin privileges
