@@ -1,31 +1,10 @@
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+// Simple Edge Function for patron to invite staff
+// Uses the built-in Supabase client
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')!
-
-const supabase = createClient(supabaseUrl, serviceRoleKey)
-
-// CORS headers for all responses
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
-// Custom secret for this function (set in Supabase secrets)
-const FUNCTION_SECRET = Deno.env.get('PATRON_INVITE_SECRET')
-
-// Simple JWT decode - get user ID from token without verification
-function decodeJWT(token: string): { user_id: string } | null {
-  try {
-    const parts = token.split('.')
-    if (parts.length !== 3) return null
-    
-    const payload = JSON.parse(atob(parts[1]))
-    return { user_id: payload.sub }
-  } catch {
-    return null
-  }
 }
 
 Deno.serve(async (req) => {
@@ -42,92 +21,30 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Check for custom secret in header (alternative to JWT verification)
-    const secretHeader = req.headers.get('x-function-secret')
-    if (FUNCTION_SECRET && secretHeader === FUNCTION_SECRET) {
-      // Allow access with custom secret
-      console.log('Access granted via function secret')
-    } else {
-      // Try to verify via JWT
-      const authHeader = req.headers.get('Authorization')
-      if (!authHeader) {
-        return new Response(JSON.stringify({ error: 'Authorization header missing' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      }
+    // Get the SUPABASE_URL and SERVICE_ROLE_KEY from environment
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')
 
-      const token = authHeader.replace('Bearer ', '')
-      const decoded = decodeJWT(token)
-      if (!decoded || !decoded.user_id) {
-        return new Response(JSON.stringify({ error: 'Invalid token format' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      }
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(JSON.stringify({ error: 'Missing environment variables' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
     // Get request body
     const body = await req.json()
     const { p_email, p_password, p_role, p_nom, p_prenom, p_user_id } = body
 
-    // Get user ID from request body or JWT
-    let userId = p_user_id
-    if (!userId) {
-      const authHeader = req.headers.get('Authorization')
-      if (authHeader) {
-        const token = authHeader.replace('Bearer ', '')
-        const decoded = decodeJWT(token)
-        userId = decoded?.user_id
-      }
-    }
-
-    if (!userId) {
+    // Validate required fields
+    if (!p_user_id) {
       return new Response(JSON.stringify({ error: 'User ID required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Get caller's profile
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-
-    if (profileError) {
-      console.error('Profile error:', profileError.message)
-      return new Response(JSON.stringify({ error: 'Cannot access profile: ' + profileError.message }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-    
-    if (!profile) {
-      return new Response(JSON.stringify({ error: 'Profile not found for user ID: ' + userId }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Verify caller is patron
-    if (profile.role !== 'patron') {
-      return new Response(JSON.stringify({ error: 'Accès refusé. Seul le patron peut inviter des membres du personnel. Votre rôle: ' + profile.role }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Verify establishment
-    if (!profile.etablissement_id) {
-      return new Response(JSON.stringify({ error: 'Votre compte n\'est lié à aucun établissement.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Validate required fields
+    // Validate input
     if (!p_email || !p_password || !p_role || !p_nom || !p_prenom) {
       return new Response(JSON.stringify({ error: 'Tous les champs sont requis.' }), {
         status: 400,
@@ -135,72 +52,70 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Validate role
     if (!['serveuse', 'comptoir', 'gerant'].includes(p_role)) {
-      return new Response(JSON.stringify({ error: 'Rôle invalide. Les rôles autorisés sont: serveuse, comptoir, gerant' }), {
+      return new Response(JSON.stringify({ error: 'Rôle invalide.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Check if user already exists
-    const { data: existingUser } = await supabase.auth.admin.listUsers()
-    const userExists = existingUser.users.some((u: any) => u.email === p_email)
-    
-    if (userExists) {
-      return new Response(JSON.stringify({ error: 'Un utilisateur avec cet email existe déjà.' }), {
-        status: 409,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    // Use fetch to call Supabase Auth Admin API directly
+    const authResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey
+      },
+      body: JSON.stringify({
+        email: p_email,
+        password: p_password,
+        email_confirm: true,
+        user_metadata: {
+          role: p_role,
+          nom: p_nom,
+          prenom: p_prenom
+        }
       })
-    }
-
-    // Create user with service role
-    const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
-      email: p_email,
-      password: p_password,
-      email_confirm: true,
-      user_metadata: {
-        role: p_role,
-        nom: p_nom,
-        prenom: p_prenom,
-        etablissement_id: profile.etablissement_id
-      }
     })
 
-    if (createUserError) {
-      console.error('Error creating user:', createUserError)
-      return new Response(JSON.stringify({ error: createUserError.message }), {
+    const authResult = await authResponse.json()
+
+    if (!authResponse.ok || authResult.error) {
+      console.error('Auth error:', authResult)
+      return new Response(JSON.stringify({ error: authResult.error || 'Failed to create user' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    if (!newUser.user) {
-      return new Response(JSON.stringify({ error: 'Erreur lors de la création de l\'utilisateur' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
+    const newUserId = authResult.id
 
-    // Update profile with etablissement_id
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({
+    // Now update the profile in the public schema
+    // Use fetch to call Supabase directly
+    const profileResponse = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${newUserId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
         role: p_role,
         nom: p_nom,
         prenom: p_prenom,
-        etablissement_id: profile.etablissement_id,
         actif: true
       })
-      .eq('id', newUser.user.id)
+    })
 
-    if (updateError) {
-      console.error('Error updating profile:', updateError.message)
+    if (!profileResponse.ok) {
+      console.error('Profile update error:', await profileResponse.text())
     }
 
     return new Response(JSON.stringify({ 
       success: true, 
-      user_id: newUser.user.id,
+      user_id: newUserId,
       message: 'Membre du personnel créé avec succès'
     }), {
       status: 200,
