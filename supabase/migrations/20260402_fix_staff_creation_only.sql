@@ -26,6 +26,9 @@ COMMENT ON FUNCTION public.get_user_etablissement_id IS
 -- Enable pgcrypto extension if not exists
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- Drop the existing function first to avoid the return type error
+DROP FUNCTION IF EXISTS patron_invite_staff(TEXT, TEXT, TEXT, TEXT, TEXT);
+
 -- Create the function to invite staff members
 -- Uses SECURITY DEFINER to run with elevated privileges
 CREATE OR REPLACE FUNCTION patron_invite_staff(
