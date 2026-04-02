@@ -143,15 +143,22 @@ BEGIN
   )
   RETURNING id INTO v_new_user_id;
   
-  -- Update the profile with the correct role and etablissement_id
-  UPDATE profiles
-  SET role = p_role,
-      nom = p_nom,
-      prenom = p_prenom,
-      etablissement_id = v_etablissement_id,
-      actif = true,
-      email = p_email
-  WHERE id = v_new_user_id;
+  -- Check if profile exists and update, or insert if not
+  IF EXISTS (SELECT 1 FROM profiles WHERE id = v_new_user_id) THEN
+    -- Profile exists, update it
+    UPDATE profiles
+    SET role = p_role,
+        nom = p_nom,
+        prenom = p_prenom,
+        etablissement_id = v_etablissement_id,
+        actif = true,
+        email = p_email
+    WHERE id = v_new_user_id;
+  ELSE
+    -- Profile doesn't exist, create it
+    INSERT INTO profiles (id, email, nom, prenom, role, etablissement_id, actif)
+    VALUES (v_new_user_id, p_email, p_nom, p_prenom, p_role, v_etablissement_id, true);
+  END IF;
   
   RETURN 'Membre du personnel créé avec succès!';
   
