@@ -44,8 +44,8 @@ CREATE OR REPLACE FUNCTION patron_invite_staff(
 RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
-AS $$
+SET search_path = public, pg_catalog
+AS $
 DECLARE
   v_caller_id UUID;
   v_caller_profile RECORD;
