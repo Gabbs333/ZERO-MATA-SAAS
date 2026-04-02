@@ -104,27 +104,45 @@ export function UtilisateursScreen() {
           p_prenom: formData.prenom
         });
         
-        // Use RPC to call the database function
-        const { data, error: createError } = await supabase.rpc('patron_invite_staff', {
-          p_email: formData.email,
-          p_password: formData.password,
-          p_role: formData.role,
-          p_nom: formData.nom,
-          p_prenom: formData.prenom
+        // Use Supabase Admin API to create user properly
+        // This requires the user to have service_role key access or be an admin
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email: formData.email,
+          password: formData.password,
+          email_confirm: true,
+          user_metadata: {
+            role: formData.role,
+            nom: formData.nom,
+            prenom: formData.prenom
+          }
         });
         
-        if (createError) {
-          console.error('RPC Error creating user:', createError);
-          throw new Error(createError.message || 'Erreur lors de la création');
+        if (authError) {
+          console.error('Auth Admin Error:', authError);
+          throw new Error(authError.message || 'Erreur lors de la création');
         }
         
-        console.log('RPC Response:', data);
-        
-        if (data && data.includes('succès')) {
-          alert('Membre du personnel créé avec succès! Il peut maintenant se connecter avec ses identifiants.');
-        } else {
-          throw new Error(data || 'Erreur lors de la création');
+        // Now update the profile with the correct etablissement_id
+        if (authData?.user) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .update({
+              role: formData.role,
+              nom: formData.nom,
+              prenom: formData.prenom,
+              etablissement_id: profile?.etablissement_id,
+              actif: true
+            })
+            .eq('id', authData.user.id);
+          
+          if (profileError) {
+            console.error('Profile update error:', profileError);
+            throw new Error(profileError.message || 'Erreur lors de la mise à jour du profil');
+          }
         }
+        
+        console.log('User created successfully:', authData);
+        alert('Membre du personnel créé avec succès! Il peut maintenant se connecter avec ses identifiants.');
       }
       
       setIsModalOpen(false);

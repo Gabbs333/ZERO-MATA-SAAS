@@ -125,11 +125,8 @@ BEGIN
     'authenticated',
     'authenticated',
     p_email,
-    -- Use the password provided by the patron
-    -- Store a placeholder that will be replaced after email confirmation flow
-    -- Use MD5 hash as fallback (built-in to PostgreSQL, no extension needed)
-    -- Format: md5(salt || password)
-    'md5' || md5(p_password || p_email)::text,
+    -- Placeholder password - user will need to use Supabase password reset
+    '*placeholder_not_for_login*',
     now(),
     '{"provider":"email","providers":["email"]}',
     jsonb_build_object(
