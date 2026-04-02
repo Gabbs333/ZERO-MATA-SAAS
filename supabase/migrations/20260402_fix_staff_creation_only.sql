@@ -12,19 +12,22 @@ LANGUAGE sql
 SECURITY DEFINER
 STABLE
 SET search_path = ''
-AS $$
+AS $
   SELECT etablissement_id FROM public.profiles WHERE id = auth.uid();
-$$;
+$;
 
 COMMENT ON FUNCTION public.get_user_etablissement_id IS 
 'Returns the etablissement_id of the currently authenticated user (NULL for admin users)';
 
 -- ============================================================================
--- PART 2: Fix patron_invite_staff function for staff creation
+-- PART 2: Enable pgcrypto extension (needed for password hashing)
 -- ============================================================================
 
--- Enable pgcrypto extension if not exists
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ============================================================================
+-- PART 3: Fix patron_invite_staff function for staff creation
+-- ============================================================================
 
 -- Drop the existing function first to avoid the return type error
 DROP FUNCTION IF EXISTS patron_invite_staff(TEXT, TEXT, TEXT, TEXT, TEXT);
