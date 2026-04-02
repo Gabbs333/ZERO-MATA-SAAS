@@ -2,8 +2,12 @@ import { useState } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
-import { UserPlus, Search, Edit, UserX, X } from 'lucide-react';
+import { UserPlus, Search, Edit, UserX, X, Trash2 } from 'lucide-react';
 import type { Profile } from '../types/database.types';
+
+// Get Supabase configuration
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseServiceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 export function UtilisateursScreen() {
   const profile = useAuthStore((state) => state.profile);
@@ -52,8 +56,8 @@ export function UtilisateursScreen() {
       nom: user.nom,
       prenom: user.prenom,
       role: user.role as any,
-      email: '', // Email not in profile usually, it's in auth
-      password: ''
+      email: user.email || '', // Email from profile
+      password: '' // Leave empty for security
     });
     setIsModalOpen(true);
   };
@@ -81,51 +85,107 @@ export function UtilisateursScreen() {
     try {
       if (editingUser) {
         // Update existing profile
-        const { error } = await supabase
+        const { error: profileError } = await supabase
           .from('profiles')
           .update({
             nom: formData.nom,
             prenom: formData.prenom,
-            role: formData.role
+            role: formData.role,
+            email: formData.email
           })
           .eq('id', editingUser.id);
         
-        if (error) {
-          console.error('Update error:', error);
-          throw new Error(error.message);
+        if (profileError) {
+          console.error('Profile update error:', profileError);
+          throw new Error(profileError.message);
         }
+
+        // Update email and/or password via Auth Admin API if changed
+        if (supabaseServiceRoleKey) {
+          const authUpdate: any = {};
+          
+          if (formData.email && formData.email !== editingUser.email) {
+            authUpdate.email = formData.email;
+          }
+          
+          if (formData.password) {
+            authUpdate.password = formData.password;
+          }
+
+          if (Object.keys(authUpdate).length > 0) {
+            console.log('Updating auth for user:', editingUser.id, authUpdate);
+            const authResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users/${editingUser.id}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseServiceRoleKey}`,
+                'apikey': supabaseServiceRoleKey
+              },
+              body: JSON.stringify(authUpdate)
+            });
+
+            if (!authResponse.ok) {
+              const authResult = await authResponse.json();
+              console.error('Auth update error:', authResult);
+              // Don't fail the whole update, profile was updated
+            } else {
+              console.log('Auth updated successfully');
+            }
+          }
+        }
+
         alert('Utilisateur mis à jour avec succès');
       } else {
-        // Create new user using the patron_invite_staff RPC function
-        console.log('Creating user with:', {
-          p_email: formData.email,
-          p_role: formData.role,
-          p_nom: formData.nom,
-          p_prenom: formData.prenom
+        // Create new user using Supabase Auth Admin API directly
+        // This uses proper bcrypt password hashing
+        console.log('Creating user with Auth Admin API:', {
+          email: formData.email,
+          role: formData.role,
+          nom: formData.nom,
+          prenom: formData.prenom,
+          etablissement_id: profile.etablissement_id
         });
         
-        // Use RPC to call the database function
-        // Note: The RPC function creates users with MD5 hashed passwords
-        const { data, error: createError } = await supabase.rpc('patron_invite_staff', {
-          p_email: formData.email,
-          p_password: formData.password,
-          p_role: formData.role,
-          p_nom: formData.nom,
-          p_prenom: formData.prenom
+        // Check if service role key is available
+        if (!supabaseServiceRoleKey) {
+          throw new Error('Configuration error: Service role key not found. Please contact administrator.');
+        }
+        
+        // Step 1: Create user with Supabase Auth Admin API
+        const authResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceRoleKey}`,
+            'apikey': supabaseServiceRoleKey
+          },
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+            email_confirm: true,
+            user_metadata: {
+              role: formData.role,
+              nom: formData.nom,
+              prenom: formData.prenom,
+              etablissement_id: profile.etablissement_id
+            }
+          })
         });
         
-        if (createError) {
-          console.error('RPC Error creating user:', createError);
-          throw new Error(createError.message || 'Erreur lors de la création');
+        const authResult = await authResponse.json();
+        console.log('Auth API response:', authResult);
+        
+        if (!authResponse.ok || authResult.error) {
+          console.error('Auth API error:', authResult);
+          throw new Error(authResult.error?.message || 'Erreur lors de la création de l\'utilisateur');
         }
         
-        console.log('RPC Response:', data);
+        console.log('User created with ID:', authResult.id);
         
-        if (data && data.includes('succès')) {
-          alert('Membre du personnel créé avec succès! Il peut maintenant se connecter avec ses identifiants.');
-        } else {
-          throw new Error(data || 'Erreur lors de la création');
-        }
+        // Note: The profile is automatically created by the trigger with etablissement_id
+        // No need to update it manually
+        
+        alert('Membre du personnel créé avec succès! Il peut maintenant se connecter avec ses identifiants.');
       }
       
       setIsModalOpen(false);
@@ -152,6 +212,71 @@ export function UtilisateursScreen() {
     } catch (error) {
       console.error('Error updating status:', error);
       alert('Error updating status');
+    }
+  };
+
+  const handleDelete = async (user: Profile) => {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer ${user.prenom} ${user.nom} ? Cette action est irréversible.`)) return;
+    
+    try {
+      // Check if service role key is available
+      if (!supabaseServiceRoleKey) {
+        throw new Error('Configuration error: Service role key not found. Please contact administrator.');
+      }
+
+      // Step 1: Delete user from auth.users using Admin API (this should cascade to profiles)
+      console.log('Deleting user from auth:', user.id);
+      const authResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users/${user.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceRoleKey}`,
+          'apikey': supabaseServiceRoleKey
+        }
+      });
+
+      if (!authResponse.ok) {
+        const authResult = await authResponse.json();
+        console.error('Auth API error:', authResult);
+        console.error('Response status:', authResponse.status);
+        
+        // If auth deletion fails with 500, try to delete profile directly
+        if (authResponse.status === 500) {
+          console.warn('Auth deletion returned 500, trying to delete profile directly');
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .delete()
+            .eq('id', user.id);
+          
+          if (profileError) {
+            console.error('Profile deletion also failed:', profileError);
+            throw new Error('Erreur lors de la suppression du membre du personnel');
+          }
+          
+          alert('Membre du personnel supprimé avec succès');
+          refetch();
+          return;
+        }
+        
+        throw new Error(authResult.error?.message || 'Erreur lors de la suppression de l\'utilisateur');
+      }
+
+      console.log('User deleted successfully from auth');
+
+      // Step 2: Also delete profile from profiles table (in case cascade didn't work)
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', user.id);
+
+      if (profileError) {
+        console.log('Profile already deleted by cascade or does not exist:', profileError);
+      }
+
+      alert('Membre du personnel supprimé avec succès');
+      refetch();
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      alert(error.message || 'Erreur lors de la suppression du membre du personnel');
     }
   };
 
@@ -214,36 +339,49 @@ export function UtilisateursScreen() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredUsers?.map((user) => (
-              <div key={user.id} className={`bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border ${user.actif ? 'border-neutral-200 dark:border-white/5' : 'border-neutral-200 dark:border-white/5 opacity-75'} shadow-soft overflow-hidden group hover:border-primary/20 dark:hover:border-dark-accent/30 transition-all hover:shadow-xl`}>
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                     <div className="flex items-center gap-4">
-                        <div className={`size-14 rounded-2xl flex items-center justify-center text-xl font-black shadow-inner group-hover:scale-110 transition-transform ${
-                            user.role === 'patron' || user.role === 'gerant' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400' :
-                            user.role === 'comptoir' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400' :
-                            'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400'
-                        }`}>
-                           {user.prenom[0]}{user.nom[0]}
-                        </div>
-                        <div>
-                           <h3 className="font-bold text-lg text-primary dark:text-white group-hover:text-primary dark:group-hover:text-dark-accent transition-colors">
-                              {user.prenom} {user.nom}
-                           </h3>
-                           <span className={`inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider ${
-                                !user.actif ? 'text-red-500' : 'text-neutral-500 dark:text-neutral-400'
-                           }`}>
-                              <span className={`size-1.5 rounded-full ${user.actif ? 'bg-semantic-green' : 'bg-red-500'}`}></span>
-                              {user.actif ? user.role : 'Inactif'}
-                           </span>
-                        </div>
-                     </div>
-                     <button 
-                        onClick={(e) => { e.stopPropagation(); handleEdit(user); }}
-                        className="p-2.5 hover:bg-neutral-100 dark:hover:bg-white/10 rounded-xl text-neutral-400 hover:text-primary dark:hover:text-dark-accent transition-all active:scale-90"
-                     >
-                        <Edit className="w-5 h-5" />
-                     </button>
-                  </div>
+               <div key={user.id} className={`bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border ${user.actif ? 'border-neutral-200 dark:border-white/5' : 'border-neutral-200 dark:border-white/5 opacity-75'} shadow-soft overflow-hidden group hover:border-primary/20 dark:hover:border-dark-accent/30 transition-all hover:shadow-xl relative`}>
+                 <div className="p-6">
+                   <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center gap-4 flex-1 min-w-0 pr-2">
+                         <div className={`size-14 rounded-2xl flex items-center justify-center text-xl font-black shadow-inner group-hover:scale-110 transition-transform flex-shrink-0 ${
+                             user.role === 'patron' || user.role === 'gerant' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400' :
+                             user.role === 'comptoir' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400' :
+                             'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400'
+                         }`}>
+                            {user.prenom[0]}{user.nom[0]}
+                         </div>
+                          <div className="min-w-0">
+                             <h3 className="font-bold text-lg text-primary dark:text-white group-hover:text-primary dark:group-hover:text-dark-accent transition-colors truncate" title={`${user.prenom} ${user.nom}`}>
+                                {user.prenom} {user.nom}
+                             </h3>
+                            <span className={`inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider ${
+                                 !user.actif ? 'text-red-500' : 'text-neutral-500 dark:text-neutral-400'
+                            }`}>
+                               <span className={`size-1.5 rounded-full ${user.actif ? 'bg-semantic-green' : 'bg-red-500'}`}></span>
+                               {user.actif ? user.role : 'Inactif'}
+                            </span>
+                         </div>
+                      </div>
+                      {/* Boutons d'action visibles uniquement au survol */}
+                      <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/80 dark:bg-dark-card/80 backdrop-blur-sm rounded-lg p-1 shadow-lg">
+                        <button 
+                           onClick={(e) => { e.stopPropagation(); handleEdit(user); }}
+                           className="p-2 hover:bg-neutral-100 dark:hover:bg-white/10 rounded-lg text-neutral-400 hover:text-primary dark:hover:text-dark-accent transition-all active:scale-90"
+                           title="Modifier"
+                        >
+                           <Edit className="w-4 h-4" />
+                        </button>
+                        {user.role !== 'patron' && (
+                          <button 
+                             onClick={(e) => { e.stopPropagation(); handleDelete(user); }}
+                             className="p-2 hover:bg-red-100 dark:hover:bg-red-500/10 rounded-lg text-neutral-400 hover:text-red-600 dark:hover:text-red-400 transition-all active:scale-90"
+                             title="Supprimer"
+                          >
+                             <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                   </div>
 
                   <div className="flex gap-2 mt-6">
                      <button 
@@ -333,34 +471,33 @@ export function UtilisateursScreen() {
                 </select>
               </div>
 
-              {!editingUser && (
-                <>
-                    <div className="space-y-1.5">
-                        <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                          Email professionnel
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={formData.email}
-                          onChange={(e) => setFormData({...formData, email: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-primary dark:text-white focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 outline-none transition-all"
-                        />
-                    </div>
-                    <div className="space-y-1.5">
-                        <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                          Mot de passe
-                        </label>
-                        <input
-                          type="password"
-                          required
-                          value={formData.password}
-                          onChange={(e) => setFormData({...formData, password: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-primary dark:text-white focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 outline-none transition-all"
-                        />
-                    </div>
-                </>
-              )}
+              {/* Email - visible en mode modification et creation */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                  Email professionnel
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-primary dark:text-white focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 outline-none transition-all"
+                />
+              </div>
+
+              {/* Password - visible en mode modification et creation */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                  Mot de passe {editingUser && '(laisser vide pour conserver l\'actuel)'}
+                </label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  placeholder={editingUser ? 'Nouveau mot de passe (optionnel)' : ''}
+                  className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-primary dark:text-white focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 outline-none transition-all"
+                />
+              </div>
 
               <button
                 type="submit"

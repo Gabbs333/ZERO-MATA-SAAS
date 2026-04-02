@@ -21,6 +21,7 @@ export interface Profile {
   role: 'serveuse' | 'comptoir' | 'gerant' | 'patron' | 'admin' | 'comptable';
   nom: string;
   prenom: string;
+  email?: string; // Email from auth.users
   etablissement_id: string | null; // NULL for admin users
   actif: boolean;
   date_creation: string;

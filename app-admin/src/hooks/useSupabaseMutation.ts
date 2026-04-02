@@ -241,6 +241,8 @@ interface CreateAdminUserParams {
   password: string;
   nom: string;
   prenom: string;
+  role?: 'patron' | 'gerant' | 'comptoir' | 'serveuse';
+  etablissement_id?: string;
 }
 
 export function useCreateAdminUser(
@@ -259,14 +261,14 @@ export function useCreateAdminUser(
 
       if (authError) throw authError;
 
-      // Mettre à jour le profil avec le rôle admin
+      // Mettre à jour le profil avec le rôle et l'établissement
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .update({
           nom: params.nom,
           prenom: params.prenom,
-          role: 'admin',
-          etablissement_id: null,
+          role: params.role || 'serveuse',
+          etablissement_id: params.etablissement_id || null,
         })
         .eq('id', authData.user.id)
         .select()

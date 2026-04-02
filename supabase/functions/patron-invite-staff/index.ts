@@ -1,5 +1,6 @@
-// Simple Edge Function for patron to invite staff
-// With API key verification
+// Edge Function for patron to invite staff
+// Uses Supabase Auth Admin API for proper password hashing
+// Automatically assigns etablissement_id from patron's profile
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -94,6 +95,72 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Get patron's profile to retrieve etablissement_id
+    console.log('Fetching patron profile for user:', userId)
+    
+    const profileResponse = await fetch(
+      `${supabaseUrl}/rest/v1/profiles?id=eq.${userId}&select=id,role,etablissement_id,actif`,
+      {
+        headers: {
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
+          'Content-Type': 'application/json'
+        }
+      }
+    )
+
+    const profileData = await profileResponse.json()
+    console.log('Profile response:', profileData)
+
+    if (!profileResponse.ok || !profileData || profileData.length === 0) {
+      console.error('Profile not found:', profileData)
+      return new Response(JSON.stringify({ error: 'Profil non trouvé' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const patronProfile = profileData[0]
+
+    // Verify patron role and active status
+    if (patronProfile.role !== 'patron') {
+      console.error('User is not a patron:', patronProfile.role)
+      return new Response(JSON.stringify({ error: 'Accès refusé. Seul le patron peut inviter des membres du personnel.' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (!patronProfile.actif) {
+      console.error('Patron account is inactive')
+      return new Response(JSON.stringify({ error: 'Votre compte est désactivé.' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Get etablissement_id from patron's profile
+    const etablissementId = patronProfile.etablissement_id
+    console.log('Etablissement ID:', etablissementId)
+
+    if (!etablissementId) {
+      console.error('Patron has no etablissement_id')
+      return new Response(JSON.stringify({ error: 'Votre compte n\'est lié à aucun établissement.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Validate role
+    const validRoles = ['serveuse', 'comptoir', 'gerant']
+    if (!validRoles.includes(p_role)) {
+      console.error('Invalid role:', p_role)
+      return new Response(JSON.stringify({ error: `Rôle invalide. Les rôles autorisés sont: ${validRoles.join(', ')}` }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     // Create user via Auth Admin API
     console.log('Creating user with email:', p_email)
     
@@ -111,7 +178,8 @@ Deno.serve(async (req) => {
         user_metadata: {
           role: p_role,
           nom: p_nom,
-          prenom: p_prenom
+          prenom: p_prenom,
+          etablissement_id: etablissementId
         }
       })
     })
@@ -129,10 +197,38 @@ Deno.serve(async (req) => {
 
     console.log('User created:', authResult.id)
 
+    // Update profile with etablissement_id (in case trigger didn't set it)
+    console.log('Updating profile with etablissement_id')
+    
+    const updateProfileResponse = await fetch(
+      `${supabaseUrl}/rest/v1/profiles?id=eq.${authResult.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          etablissement_id: etablissementId,
+          role: p_role,
+          nom: p_nom,
+          prenom: p_prenom,
+          actif: true
+        })
+      }
+    )
+
+    if (!updateProfileResponse.ok) {
+      console.error('Failed to update profile:', await updateProfileResponse.text())
+      // Don't fail the request, user was created successfully
+    }
+
     return new Response(JSON.stringify({ 
       success: true, 
       user_id: authResult.id,
-      message: 'Staff member created successfully'
+      message: 'Membre du personnel créé avec succès!'
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

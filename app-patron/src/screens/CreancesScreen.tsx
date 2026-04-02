@@ -74,27 +74,37 @@ export function CreancesScreen() {
           date_encaissement: new Date().toISOString()
         });
 
-      if (encaissementError) throw encaissementError;
+      if (encaissementError) {
+        console.error('Encaissement error:', encaissementError);
+        throw encaissementError;
+      }
 
       // 2. Update Facture
       const newAmountPaid = selectedFacture.montant_paye + paymentAmount;
       const newStatus = newAmountPaid >= selectedFacture.montant_total ? 'payee' : 'partiellement_payee';
+      const newRemaining = selectedFacture.montant_total - newAmountPaid;
 
       const { error: factureError } = await supabase
         .from('factures')
         .update({
           montant_paye: newAmountPaid,
-          statut: newStatus
+          montant_restant: newRemaining,
+          statut: newStatus,
+          ...(newStatus === 'payee' ? { date_paiement_complet: new Date().toISOString() } : {})
         })
         .eq('id', selectedFacture.id);
 
-      if (factureError) throw factureError;
+      if (factureError) {
+        console.error('Facture update error:', factureError);
+        throw factureError;
+      }
 
       setSelectedFacture(null);
       refetch();
-    } catch (error) {
+      alert('Paiement enregistré avec succès !');
+    } catch (error: any) {
       console.error('Payment error:', error);
-      alert('Error processing payment');
+      alert(`Erreur lors du traitement du paiement: ${error?.message || 'Erreur inconnue'}`);
     } finally {
       setIsProcessing(false);
     }
