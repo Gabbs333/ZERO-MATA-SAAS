@@ -90,9 +90,9 @@ BEGIN
     RAISE EXCEPTION 'Un utilisateur avec cet email existe déjà.';
   END IF;
   
-  -- Generate a temporary password (this is a workaround since pgcrypto isn't available)
+  -- Generate a temporary UUID for the user ID instead of random bytes
   -- The user will need to use password reset
-  v_temp_password := encode(gen_random_bytes(16), 'hex');
+  v_temp_password := encode(gen_random_uuid()::bytea, 'hex');
   
   -- Create user using a direct insert with a placeholder password
   -- Note: We use a simple hash that won't work for login, but allows user creation
