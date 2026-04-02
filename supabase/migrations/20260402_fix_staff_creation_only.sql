@@ -12,7 +12,7 @@ LANGUAGE sql
 SECURITY DEFINER
 STABLE
 SET search_path = ''
-AS $$$
+AS $$
   SELECT etablissement_id FROM public.profiles WHERE id = auth.uid();
 $$;
 
