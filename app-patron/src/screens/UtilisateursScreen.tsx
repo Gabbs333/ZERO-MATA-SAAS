@@ -106,6 +106,7 @@ export function UtilisateursScreen() {
         
         // Use Supabase Admin API to create user properly
         // This requires the user to have service_role key access or be an admin
+        console.log('Calling supabase.auth.admin.createUser...');
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
           email: formData.email,
           password: formData.password,
@@ -117,6 +118,8 @@ export function UtilisateursScreen() {
           }
         });
         
+        console.log('Auth response:', { authData, authError });
+        
         if (authError) {
           console.error('Auth Admin Error:', authError);
           throw new Error(authError.message || 'Erreur lors de la création');
@@ -124,6 +127,7 @@ export function UtilisateursScreen() {
         
         // Now update the profile with the correct etablissement_id
         if (authData?.user) {
+          console.log('Updating profile for user:', authData.user.id);
           const { error: profileError } = await supabase
             .from('profiles')
             .update({
@@ -135,10 +139,15 @@ export function UtilisateursScreen() {
             })
             .eq('id', authData.user.id);
           
+          console.log('Profile update result:', { profileError });
+          
           if (profileError) {
             console.error('Profile update error:', profileError);
             throw new Error(profileError.message || 'Erreur lors de la mise à jour du profil');
           }
+        } else {
+          console.error('No user data returned from createUser');
+          throw new Error('Échec de création utilisateur - pas de données retournées');
         }
         
         console.log('User created successfully:', authData);
