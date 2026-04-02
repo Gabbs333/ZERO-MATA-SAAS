@@ -12,9 +12,9 @@ LANGUAGE sql
 SECURITY DEFINER
 STABLE
 SET search_path = ''
-AS $
+AS $$
   SELECT etablissement_id FROM public.profiles WHERE id = auth.uid();
-$;
+$$;
 
 COMMENT ON FUNCTION public.get_user_etablissement_id IS 
 'Returns the etablissement_id of the currently authenticated user (NULL for admin users)';
@@ -45,7 +45,7 @@ RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $$$
 DECLARE
   v_caller_id UUID;
   v_caller_profile RECORD;
@@ -148,7 +148,7 @@ EXCEPTION
   WHEN others THEN
     RAISE EXCEPTION 'Erreur: %', SQLERRM;
 END;
-$$;
+$$$;
 
 COMMENT ON FUNCTION patron_invite_staff IS 'Permet au patron d''inviter des membres du personnel dans son établissement';
 
