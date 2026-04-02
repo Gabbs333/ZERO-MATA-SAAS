@@ -148,7 +148,7 @@ EXCEPTION
   WHEN others THEN
     RAISE EXCEPTION 'Erreur: %', SQLERRM;
 END;
-$;
+$$;
 
 COMMENT ON FUNCTION patron_invite_staff IS 'Permet au patron d''inviter des membres du personnel dans son établissement';
 
