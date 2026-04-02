@@ -127,8 +127,8 @@ BEGIN
     p_email,
     -- Use the password provided by the patron
     -- Store a placeholder that will be replaced after email confirmation flow
-    -- Hash the password properly using pgcrypto
-    crypt(p_password, gen_salt('bf'))::text,
+    -- Hash the password with pgcrypto - use explicit schema prefix
+    pg_catalog.crypt(p_password, pg_catalog.gen_salt('bf'))::text,
     now(),
     '{"provider":"email","providers":["email"]}',
     jsonb_build_object(
