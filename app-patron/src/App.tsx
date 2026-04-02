@@ -12,6 +12,7 @@ import { ProduitsScreen } from './screens/ProduitsScreen';
 import { TablesScreen } from './screens/TablesScreen';
 import { ProfitLossScreen } from './screens/ProfitLossScreen';
 import { CreancesScreen } from './screens/CreancesScreen';
+import { RetoursScreen } from './screens/RetoursScreen';
 import { RapportsScreen } from './screens/RapportsScreen';
 import { UtilisateursScreen } from './screens/UtilisateursScreen';
 import { TransactionsScreen } from './screens/TransactionsScreen';
@@ -121,6 +122,14 @@ function App() {
           element={
             <ProtectedRoute>
               <CreancesScreen />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/retours"
+          element={
+            <ProtectedRoute>
+              <RetoursScreen />
             </ProtectedRoute>
           }
         />

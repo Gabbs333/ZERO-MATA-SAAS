@@ -196,3 +196,36 @@ export interface EncaissementsByMode {
   montant_total: number;
   nombre_transactions: number;
 }
+
+// Types pour les retours
+export interface Retour {
+  id: string;
+  numero_retour: string;
+  facture_id: string;
+  commande_id: string;
+  montant_total_retour: number;
+  motif: string | null;
+  utilisateur_id: string;
+  date_retour: string;
+  etablissement_id: string;
+  profiles?: Profile;
+  factures?: Facture;
+  commandes?: Commande;
+}
+
+export interface RetourItem {
+  id: string;
+  retour_id: string;
+  commande_item_id: string;
+  produit_id: string;
+  nom_produit: string;
+  quantite_retournee: number;
+  prix_unitaire: number;
+  montant_ligne: number;
+  retours?: Retour;
+  produits?: Produit;
+}
+
+export interface RetourWithDetails extends Retour {
+  retour_items: RetourItem[];
+}

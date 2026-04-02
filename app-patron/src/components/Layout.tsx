@@ -15,7 +15,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
-  X
+  X,
+  ArrowLeftCircle
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationsPopover } from './NotificationsPopover';
@@ -103,6 +104,7 @@ export function Layout({ children }: LayoutProps) {
       { text: 'Supply', icon: Truck, path: '/ravitaillements', roles: ['gerant', 'patron'] },
       { text: 'Products', icon: ShoppingCart, path: '/produits', roles: ['gerant', 'patron'] },
       { text: 'Tables', icon: LayoutDashboard, path: '/tables', roles: ['gerant', 'patron'] },
+      { text: 'Retours', icon: ArrowLeftCircle, path: '/retours', roles: ['gerant', 'patron'] },
       { text: 'Performance', icon: Banknote, path: '/profits', roles: ['patron'] },
   ];
 
