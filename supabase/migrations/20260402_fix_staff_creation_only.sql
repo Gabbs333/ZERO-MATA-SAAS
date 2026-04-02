@@ -149,7 +149,8 @@ BEGIN
       nom = p_nom,
       prenom = p_prenom,
       etablissement_id = v_etablissement_id,
-      actif = true
+      actif = true,
+      email = p_email
   WHERE id = v_new_user_id;
   
   RETURN 'Membre du personnel créé avec succès!';
