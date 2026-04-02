@@ -45,7 +45,7 @@ RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$$
+AS $$
 DECLARE
   v_caller_id UUID;
   v_caller_profile RECORD;
