@@ -61,6 +61,9 @@ BEGIN
     RAISE EXCEPTION 'Vous devez être connecté pour inviter des membres du personnel.';
   END IF;
   
+  -- Get the caller's profile with proper search_path for pgcrypto
+  SELECT set_config('search_path', 'pg_catalog, public', true);
+  
   -- Get the caller's profile
   SELECT * INTO v_caller_profile 
   FROM profiles 
