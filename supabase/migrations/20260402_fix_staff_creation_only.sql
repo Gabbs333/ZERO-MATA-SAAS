@@ -190,6 +190,16 @@ CREATE POLICY "users_read_own_profile"
   TO authenticated
   USING (id = auth.uid());
 
+-- Also allow users from the same establishment to read each other's profiles
+DROP POLICY IF EXISTS "establishment_users_read_profiles" ON profiles;
+
+CREATE POLICY "establishment_users_read_profiles"
+  ON profiles FOR SELECT
+  TO authenticated
+  USING (
+    etablissement_id = (SELECT etablissement_id FROM profiles WHERE id = auth.uid())
+  );
+
 DROP POLICY IF EXISTS "patron_read_establishment_profiles" ON profiles;
 
 CREATE POLICY "patron_read_establishment_profiles"
