@@ -12,7 +12,7 @@ LANGUAGE sql
 SECURITY DEFINER
 STABLE
 SET search_path = ''
-AS $$
+AS $$$
   SELECT etablissement_id FROM public.profiles WHERE id = auth.uid();
 $$;
 
@@ -45,7 +45,7 @@ RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_catalog
-AS $
+AS $$
 DECLARE
   v_caller_id UUID;
   v_caller_profile RECORD;
