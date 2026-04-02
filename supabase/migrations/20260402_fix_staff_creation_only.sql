@@ -127,9 +127,9 @@ BEGIN
     p_email,
     -- Use the password provided by the patron
     -- Store a placeholder that will be replaced after email confirmation flow
-    -- Hash the password with pgcrypto using a hardcoded salt (cost 10)
-    -- Using a pre-generated bcrypt salt for cost 10
-    pg_catalog.crypt(p_password, '$2a$10$abcdefghijklmnopqrstu')::text,
+    -- Use MD5 hash as fallback (built-in to PostgreSQL, no extension needed)
+    -- Format: md5(salt || password)
+    'md5' || md5(p_password || p_email)::text,
     now(),
     '{"provider":"email","providers":["email"]}',
     jsonb_build_object(
