@@ -116,10 +116,6 @@ BEGIN
     email_confirmed_at,
     raw_app_meta_data,
     raw_user_meta_data,
-    confirmation_token,
-    recovery_token,
-    email_change_token,
-    email_change,
     created_at,
     updated_at
   )
@@ -139,10 +135,6 @@ BEGIN
       'prenom', p_prenom,
       'etablissement_id', v_etablissement_id
     ),
-    '',  -- confirmation_token as empty string
-    '',  -- recovery_token as empty string
-    '',  -- email_change_token as empty string
-    '',  -- email_change as empty string
     now(),
     now()
   )
