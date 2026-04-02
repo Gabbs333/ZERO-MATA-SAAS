@@ -3,7 +3,15 @@
 -- Created: 2026-04-02
 
 -- ============================================================================
--- PART 1: Create get_user_etablissement_id function if it doesn't exist
+-- PART 1: Enable pgcrypto extension
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+COMMENT ON EXTENSION pgcrypto IS 'Required for password hashing in staff creation';
+
+-- ============================================================================
+-- PART 2: Create get_user_etablissement_id function if it doesn't exist
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.get_user_etablissement_id()
@@ -114,15 +122,17 @@ BEGIN
     'authenticated',
     'authenticated',
     p_email,
-    '--',  -- Placeholder - user will need password reset
+    -- Use the password provided by the patron
+    -- Store a placeholder that will be replaced after email confirmation flow
+    -- Hash the password properly using pgcrypto
+    crypt(p_password, gen_salt('bf'))::text,
     now(),
     '{"provider":"email","providers":["email"]}',
     jsonb_build_object(
       'role', p_role,
       'nom', p_nom,
       'prenom', p_prenom,
-      'etablissement_id', v_etablissement_id,
-      'temporary_password', p_password  -- Store the desired password in metadata
+      'etablissement_id', v_etablissement_id
     ),
     now(),
     now()
@@ -138,7 +148,7 @@ BEGIN
       actif = true
   WHERE id = v_new_user_id;
   
-  RETURN 'Membre du personnel créé avec succès! Le mot de passe temporaire a été enregistré. L''utilisateur devra utiliser la功能 de mot de passe oublié pour définir son mot de passe.';
+  RETURN 'Membre du personnel créé avec succès!';
   
 EXCEPTION
   WHEN duplicate_object THEN
