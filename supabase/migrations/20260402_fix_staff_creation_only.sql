@@ -180,8 +180,15 @@ $$;
 COMMENT ON FUNCTION patron_invite_staff IS 'Permet au patron d''inviter des membres du personnel dans son établissement';
 
 -- ============================================================================
--- PART 3: Ensure patron can read profiles in their establishment
+-- PART 3: Ensure users can read their own profile and patron can read staff profiles
 -- ============================================================================
+
+DROP POLICY IF EXISTS "users_read_own_profile" ON profiles;
+
+CREATE POLICY "users_read_own_profile"
+  ON profiles FOR SELECT
+  TO authenticated
+  USING (id = auth.uid());
 
 DROP POLICY IF EXISTS "patron_read_establishment_profiles" ON profiles;
 
