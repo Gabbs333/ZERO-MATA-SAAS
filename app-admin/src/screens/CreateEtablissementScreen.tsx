@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, AlertCircle, Loader, User, RefreshCw } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../config/supabase';
+import { supabase, supabaseUrl, supabaseServiceRoleKey } from '../config/supabase';
 import clsx from 'clsx';
 
 interface FormData {
@@ -85,20 +85,37 @@ export default function CreateEtablissementScreen() {
 
       if (etablissementError) throw etablissementError;
 
-      // 2. Create Patron User
-      const { error: userError } = await supabase.rpc('admin_create_user', {
-        p_email: data.patronEmail,
-        p_password: data.patronPassword,
-        p_role: 'patron',
-        p_etablissement_id: etablissement.id,
-        p_nom: data.patronNom,
-        p_prenom: data.patronPrenom
+      // 2. Create Patron User via Auth Admin API
+      if (!supabaseServiceRoleKey) {
+        throw new Error('Configuration error: Service role key not found. Please contact administrator.');
+      }
+
+      const authResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceRoleKey}`,
+          'apikey': supabaseServiceRoleKey
+        },
+        body: JSON.stringify({
+          email: data.patronEmail,
+          password: data.patronPassword,
+          email_confirm: true,
+          user_metadata: {
+            role: 'patron',
+            nom: data.patronNom,
+            prenom: data.patronPrenom,
+            etablissement_id: etablissement.id
+          }
+        })
       });
 
-      if (userError) {
-        // Optional: Delete establishment if user creation fails
-        // await supabase.from('etablissements').delete().eq('id', etablissement.id);
-        throw new Error(`Erreur création patron: ${userError.message}`);
+      const authResult = await authResponse.json();
+
+      if (!authResponse.ok || authResult.error) {
+        // Clean up establishment if user creation fails
+        await supabase.from('etablissements').delete().eq('id', etablissement.id);
+        throw new Error(authResult.error?.message || 'Erreur lors de la création du compte patron');
       }
 
       return etablissement;

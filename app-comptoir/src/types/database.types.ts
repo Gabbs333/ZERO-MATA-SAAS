@@ -85,6 +85,7 @@ export interface Facture {
   commande_id: string;
   montant_total: number;
   statut: 'en_attente_paiement' | 'partiellement_payee' | 'payee';
+  statut_retour?: 'sans_retour' | 'retour_partiel' | 'retour_total';
   montant_paye: number;
   etablissement_id: string;
   date_generation: string;
