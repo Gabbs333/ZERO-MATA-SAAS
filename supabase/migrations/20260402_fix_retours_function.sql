@@ -158,9 +158,9 @@ BEGIN
       p_etablissement_id
     );
     
-    -- Update stock quantite_disponible (FIXED: stocks not stock)
+    -- Update stock quantite_actuelle (FIXED: column name is quantite_actuelle)
     UPDATE stocks
-    SET quantite_disponible = quantite_disponible + (v_item->>'quantite_retournee')::INTEGER,
+    SET quantite_actuelle = quantite_actuelle + (v_item->>'quantite_retournee')::INTEGER,
         derniere_mise_a_jour = NOW()
     WHERE produit_id = (v_item->>'produit_id')::UUID;
   END LOOP;
