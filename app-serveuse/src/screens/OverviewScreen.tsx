@@ -141,13 +141,14 @@ export function OverviewScreen({ navigation }: any) {
   const { data: creances, isPending: creancesLoadingReal } = useCreancesServeuse(userId);
 
   const { data: paginatedResult, isPending: paginatedCreancesLoading } = useSupabaseQuery(
-    ['creances-paginated', userId, currentPage, period, dateRange.start.toISOString(), dateRange.end.toISOString()],
+    ['creances-paginated', userId, user?.etablissement_id, currentPage, period, dateRange.start.toISOString(), dateRange.end.toISOString()],
     async (supabase) => {
-      if (!userId) return { data: { data: [], count: 0 }, error: null };
+      if (!userId || !user?.etablissement_id) return { data: { data: [], count: 0 }, error: null };
 
       let query = supabase
         .from('factures')
         .select('*, commandes!inner(serveuse_id, tables(numero))', { count: 'exact' })
+        .eq('etablissement_id', user.etablissement_id)
         .neq('statut', 'payee')
         .neq('statut', 'annulee')
         .eq('commandes.serveuse_id', userId);
@@ -171,7 +172,7 @@ export function OverviewScreen({ navigation }: any) {
       
       return { data: { data, count }, error: null };
     },
-    { enabled: !!userId }
+    { enabled: !!userId && !!user?.etablissement_id }
   );
 
   const paginatedCreances = paginatedResult?.data || [];
@@ -179,15 +180,16 @@ export function OverviewScreen({ navigation }: any) {
   const totalPages = Math.ceil(totalCreancesCountPaginated / itemsPerPage);
 
   const { data: stats, isPending: statsLoading } = useSupabaseQuery(
-    ['waitress-stats', dateRange.start.toISOString(), dateRange.end.toISOString(), userId],
+    ['waitress-stats', dateRange.start.toISOString(), dateRange.end.toISOString(), userId, user?.etablissement_id],
     async (supabase) => {
-      if (!userId) return { data: null, error: null };
+      if (!userId || !user?.etablissement_id) return { data: null, error: null };
       
-      // Get orders for this waitress
+      // Get orders for this waitress filtered by establishment
       const { data: orders, error } = await supabase
         .from('commandes')
         .select('id, statut, montant_total, est_payee, table_id, date_creation, tables(numero)')
         .eq('serveuse_id', userId)
+        .eq('etablissement_id', user.etablissement_id)
         .order('date_creation', { ascending: false })
         .limit(200);
 
@@ -218,7 +220,8 @@ export function OverviewScreen({ navigation }: any) {
         },
         error: null
       };
-    }
+    },
+    { enabled: !!userId && !!user?.etablissement_id }
   );
 
   // Calculer le total des créances à partir du hook dédié, mais filtré par la période sélectionnée

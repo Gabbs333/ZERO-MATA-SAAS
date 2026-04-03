@@ -26,9 +26,7 @@ export function CreancesDetailsScreen({ navigation, route }: any) {
   const { data: factures, isPending: isLoading } = useSupabaseQuery<UnpaidFacture[]>(
     ['unpaid-factures', user?.etablissement_id, factureId, user?.id],
     async (supabase) => {
-      // If we have a specific factureId, we try to fetch it regardless of etablissement_id (RLS will handle security)
-      // Otherwise we need at least user id
-      if (!user?.id) return { data: [], error: null };
+      if (!user?.id || !user?.etablissement_id) return { data: [], error: null };
       
       let query = supabase
         .from('factures')
@@ -39,32 +37,20 @@ export function CreancesDetailsScreen({ navigation, route }: any) {
             profiles!serveuse_id (nom, prenom)
           )
         `)
+        .eq('etablissement_id', user.etablissement_id)
         .in('statut', ['en_attente_paiement', 'partiellement_payee']);
-
-      // Note: We don't filter by etablissement_id here because it might not be present on older factures
-      // or might cause issues if user profile is not fully synced.
-      // RLS and serveuse_id check on linked command are sufficient for security.
 
       // If specific facture requested
       if (factureId) {
         query = query.eq('id', factureId);
       } else {
-        // If listing all, ensure we only see those for this serveuse (via inner join on commandes)
-        // This matches the logic in OverviewScreen
+        // Ensure we only see factures for this serveuse's commandes
         query = query.eq('commandes.serveuse_id', user.id);
-        
-        // Also apply filters from OverviewScreen logic if passed via params?
-        // Actually, the user might want to see ALL unpaid details here if they clicked "See All" or similar.
-        // But if they clicked a specific item, we show that item.
-        // Wait, CreancesDetailsScreen seems to be a list of ALL unpaid factures if no ID is passed.
-        // If the user came from Dashboard "Today" view, they might expect to see only "Today" list here too?
-        // Or maybe this screen is meant to be the "Audit" view mentioned by the user where they can see everything.
-        // Let's keep it showing ALL unpaid factures for now as per user request "anciennes creances doivent rester consultables".
       }
 
       return query.order('date_generation', { ascending: false });
     },
-    { enabled: !!user?.id }
+    { enabled: !!user?.id && !!user?.etablissement_id }
   );
 
   const formatPrice = (price: number) => {

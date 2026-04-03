@@ -91,7 +91,7 @@ export default function HistoriqueScreen({ navigation }: any) {
   };
 
   const { data: items, isPending: isLoading, error, isError } = useSupabaseQuery<any[]>(
-    ['historique', user?.id, timeFilter, customDateRange],
+    ['historique', user?.id, user?.etablissement_id, timeFilter, customDateRange],
     (supabase) => {
       console.log('Fetching historique');
       const range = getDateRange(timeFilter);
@@ -99,6 +99,7 @@ export default function HistoriqueScreen({ navigation }: any) {
           .from('commandes')
           .select('*, commande_items(*), tables(*)')
           .eq('serveuse_id', user?.id)
+          .eq('etablissement_id', user?.etablissement_id)
           .order('date_creation', { ascending: false });
         
       if (range) {
@@ -110,7 +111,7 @@ export default function HistoriqueScreen({ navigation }: any) {
       
       return query;
     },
-    { enabled: !!user?.id }
+    { enabled: !!user?.id && !!user?.etablissement_id }
   );
 
   const handleDateChange = (event: any, selectedDate?: Date) => {

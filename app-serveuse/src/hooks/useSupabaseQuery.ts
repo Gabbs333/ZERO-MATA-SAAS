@@ -2,6 +2,7 @@ import { useQuery, UseQueryOptions } from '@tanstack/react-query';
 import { supabase } from '../config/supabase';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { Table, ProduitAvecStock } from '../types/database.types';
+import { useAuthStore } from '../store/authStore';
 
 type QueryFunction<T> = (supabase: SupabaseClient<any, "public", any>) => PromiseLike<{ data: T | null; error: PostgrestError | null }>;
 
@@ -21,26 +22,39 @@ export function useSupabaseQuery<T>(
   });
 }
 
-// Hook spécifique pour récupérer les tables
+// Hook spécifique pour récupérer les tables d'un établissement
 export function useTables() {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   return useSupabaseQuery<Table[]>(
-    ['tables'],
-    (supabase) =>
-      supabase
+    ['tables', etablissementId],
+    (supabase) => {
+      if (!etablissementId) return Promise.resolve({ data: [], error: null });
+      return supabase
         .from('tables')
         .select('*')
-        .order('numero', { ascending: true })
+        .eq('etablissement_id', etablissementId)
+        .order('numero', { ascending: true });
+    },
+    { enabled: !!etablissementId }
   );
 }
 
-// Hook spécifique pour récupérer les produits disponibles
+// Hook spécifique pour récupérer les produits disponibles d'un établissement
 export function useProduitsDisponibles() {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   return useSupabaseQuery<ProduitAvecStock[]>(
-    ['produits-disponibles'],
+    ['produits-disponibles', etablissementId],
     async (supabase) => {
+      if (!etablissementId) return { data: [], error: null };
+
       const { data, error } = await supabase
         .from('stocks')
         .select('*, produits!inner(*)')
+        .eq('etablissement_id', etablissementId)
         .gt('quantite_actuelle', 0)
         .order('produits(nom)', { ascending: true });
 
@@ -55,16 +69,20 @@ export function useProduitsDisponibles() {
       }));
 
       return { data: formattedData, error: null };
-    }
+    },
+    { enabled: !!etablissementId }
   );
 }
 
-// Hook pour récupérer les créances de la serveuse
+// Hook pour récupérer les créances de la serveuse (filtré par établissement)
 export function useCreancesServeuse(serveuseId: string | undefined) {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   return useSupabaseQuery(
-    ['creances', serveuseId],
+    ['creances', serveuseId, etablissementId],
     async (supabase) => {
-      if (!serveuseId) return { data: [], error: null };
+      if (!serveuseId || !etablissementId) return { data: [], error: null };
       
       return supabase
         .from('factures')
@@ -77,26 +95,29 @@ export function useCreancesServeuse(serveuseId: string | undefined) {
             tables (numero)
           )
         `)
+        .eq('etablissement_id', etablissementId)
         .eq('commandes.serveuse_id', serveuseId)
-        .neq('statut', 'payee') // On veut ce qui n'est PAS payé
+        .neq('statut', 'payee')
         .neq('statut', 'annulee')
         .order('date_generation', { ascending: false });
     },
     {
-      enabled: !!serveuseId,
-      // Refetch on mount and window focus to ensure freshness
+      enabled: !!serveuseId && !!etablissementId,
       refetchOnMount: true,
       refetchOnWindowFocus: true
     }
   );
 }
 
-// Hook pour récupérer les commandes de la serveuse
+// Hook pour récupérer les commandes de la serveuse (filtré par établissement)
 export function useMyCommandes(serveuseId: string | undefined) {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   return useSupabaseQuery(
-    ['my-commandes', serveuseId],
+    ['my-commandes', serveuseId, etablissementId],
     async (supabase) => {
-      if (!serveuseId) return { data: [], error: null };
+      if (!serveuseId || !etablissementId) return { data: [], error: null };
       
       return supabase
         .from('commandes')
@@ -108,22 +129,26 @@ export function useMyCommandes(serveuseId: string | undefined) {
             produits (nom, prix_vente)
           )
         `)
+        .eq('etablissement_id', etablissementId)
         .eq('serveuse_id', serveuseId)
         .order('date_creation', { ascending: false })
         .limit(20);
     },
     {
-      enabled: !!serveuseId,
+      enabled: !!serveuseId && !!etablissementId,
     }
   );
 }
 
-// Hook pour récupérer les commandes actives d'une table
+// Hook pour récupérer les commandes actives d'une table (filtré par établissement)
 export function useTableActiveCommandes(tableId: string | null) {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   return useSupabaseQuery(
-    ['table-active-commandes', tableId],
+    ['table-active-commandes', tableId, etablissementId],
     async (supabase) => {
-      if (!tableId) return { data: [], error: null };
+      if (!tableId || !etablissementId) return { data: [], error: null };
       
       return supabase
         .from('commandes')
@@ -134,13 +159,14 @@ export function useTableActiveCommandes(tableId: string | null) {
             produits (nom, prix_vente)
           )
         `)
+        .eq('etablissement_id', etablissementId)
         .eq('table_id', tableId)
         .in('statut', ['en_attente', 'en_cours', 'prete', 'servie', 'validee'])
         .order('date_creation', { ascending: false });
     },
     {
-      enabled: !!tableId,
-      staleTime: 1000 * 30, // 30 seconds
+      enabled: !!tableId && !!etablissementId,
+      staleTime: 1000 * 30,
     }
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
+import { useAuthStore } from '../store/authStore';
 
 type RealtimeEvent = 'INSERT' | 'UPDATE' | 'DELETE' | '*';
 
@@ -69,11 +70,15 @@ export function useRealtimeSubscription({
   }, [table, event, filter]); // Removed callback from dependencies
 }
 
-// Hook spécifique pour les mises à jour de tables
+// Hook spécifique pour les mises à jour de tables (filtré par établissement)
 export function useTablesRealtime(onUpdate: (payload: any) => void) {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   useRealtimeSubscription({
     table: 'tables',
     event: '*', // Listen to ALL events (UPDATE, INSERT, DELETE) to be safe
+    filter: etablissementId ? `etablissement_id=eq.${etablissementId}` : undefined,
     callback: onUpdate,
   });
 }
@@ -83,52 +88,75 @@ export function useCommandeValidation(
   serveuseId: string | undefined,
   onValidation: (payload: any) => void
 ) {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   useRealtimeSubscription({
     table: 'commandes',
     event: 'UPDATE',
-    filter: serveuseId ? `serveuse_id=eq.${serveuseId}` : undefined,
+    filter: serveuseId && etablissementId 
+      ? `serveuse_id=eq.${serveuseId},etablissement_id=eq.${etablissementId}` 
+      : serveuseId 
+        ? `serveuse_id=eq.${serveuseId}` 
+        : undefined,
     callback: (payload) => {
-      if (payload.new.statut === 'validee') {
+      if (payload.new?.statut === 'validee') {
         onValidation(payload.new);
       }
     },
   });
 }
 
-// Hook pour toutes les commandes (pour le dashboard)
+// Hook pour toutes les commandes (filtré par établissement)
 export function useCommandesRealtime(onUpdate: (payload: any) => void) {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   useRealtimeSubscription({
     table: 'commandes',
     event: '*',
+    filter: etablissementId ? `etablissement_id=eq.${etablissementId}` : undefined,
     callback: onUpdate,
   });
 }
 
-// Hook pour toutes les factures (pour le dashboard)
+// Hook pour toutes les factures (filtré par établissement)
 export function useFacturesRealtime(onUpdate: (payload: any) => void) {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   useRealtimeSubscription({
     table: 'factures',
     event: '*',
+    filter: etablissementId ? `etablissement_id=eq.${etablissementId}` : undefined,
     callback: onUpdate,
   });
 }
 
-// Hook spécifique pour les mises à jour de stock
+// Hook spécifique pour les mises à jour de stock (filtré par établissement)
 export function useStockRealtime(onUpdate: (payload: any) => void) {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   useRealtimeSubscription({
-    table: 'stocks', // Changed from 'stock' to 'stocks' to match DB table name
+    table: 'stocks',
     event: '*',
+    filter: etablissementId ? `etablissement_id=eq.${etablissementId}` : undefined,
     callback: onUpdate,
   });
 }
 
 // Hook pour les mises à jour de l'historique (commandes)
 export function useHistoriqueRealtime(serveuseId: string | undefined, onUpdate: (payload: any) => void) {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
   useRealtimeSubscription({
     table: 'commandes',
     event: '*',
-    // Suppression du filtre serveur 'filter' car il semble poser problème.
-    // On filtre manuellement côté client.
+    filter: serveuseId && etablissementId 
+      ? `serveuse_id=eq.${serveuseId},etablissement_id=eq.${etablissementId}` 
+      : undefined,
     callback: (payload) => {
       // Vérifier si l'événement concerne cette serveuse
       const record = payload.new || payload.old; // new pour INSERT/UPDATE, old pour DELETE
