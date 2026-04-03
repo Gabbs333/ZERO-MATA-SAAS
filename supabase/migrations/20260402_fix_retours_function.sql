@@ -165,11 +165,15 @@ BEGIN
     WHERE produit_id = (v_item->>'produit_id')::UUID;
   END LOOP;
   
-  -- Adjust facture
+    -- Adjust facture
   v_new_montant_paye := GREATEST(0, v_facture.montant_paye - v_total_retour);
   v_new_montant_restant := v_facture.montant_total - v_new_montant_paye;
   
-  IF v_new_montant_restant <= 0 THEN
+  -- Determine return status
+  IF v_new_montant_paye = 0 AND v_total_retour >= v_facture.montant_paye THEN
+    v_new_statut := 'sans_retour';
+    v_new_montant_restant := v_facture.montant_total;
+  ELSIF v_new_montant_restant <= 0 THEN
     v_new_statut := v_facture.statut;
     v_new_montant_restant := 0;
   ELSIF v_new_montant_paye = 0 THEN
@@ -178,28 +182,27 @@ BEGIN
     v_new_statut := 'partiellement_payee';
   END IF;
   
-  UPDATE factures
-  SET 
-    montant_paye = v_new_montant_paye,
-    montant_restant = v_new_montant_restant,
-    statut = v_new_statut
-  WHERE id = p_facture_id;
+  -- Determine statut_retour
+  IF v_total_retour >= v_facture.montant_total THEN
+    -- Total return
+    UPDATE factures SET 
+      montant_paye = v_new_montant_paye, 
+      montant_restant = v_new_montant_restant, 
+      statut = v_new_statut,
+      statut_retour = 'retour_total'
+    WHERE id = p_facture_id;
+  ELSE
+    -- Partial return
+    UPDATE factures SET 
+      montant_paye = v_new_montant_paye, 
+      montant_restant = v_new_montant_restant, 
+      statut = v_new_statut,
+      statut_retour = 'retour_partiel'
+    WHERE id = p_facture_id;
+  END IF;
   
-  -- Note: We don't create a negative encaissement because the constraint requires montant > 0
-  -- The invoice adjustment (montant_paye reduction) is sufficient to reflect the return
-  v_decaissement_id := NULL;
-  
-  -- Return success response
-  RETURN json_build_object(
-    'success', true,
-    'retour_id', v_retour_id,
-    'montant_total_retour', v_total_retour,
-    'decaissement_id', v_decaissement_id
-  );
-  
-EXCEPTION
-  WHEN OTHERS THEN
-    RAISE EXCEPTION 'Erreur lors du traitement du retour: %', SQLERRM;
+  RETURN json_build_object('success', true, 'retour_id', v_retour_id, 'montant_total_retour', v_total_retour);
+EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'Erreur: %', SQLERRM;
 END;
 $$;
 
