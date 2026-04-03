@@ -185,28 +185,9 @@ BEGIN
     statut = v_new_statut
   WHERE id = p_facture_id;
   
-  -- If facture was fully paid, create a negative encaissement (decaissement)
-  IF v_facture.statut = 'payee' AND v_total_retour > 0 THEN
-    INSERT INTO encaissements (
-      facture_id,
-      montant,
-      mode_paiement,
-      reference,
-      utilisateur_id,
-      date_encaissement,
-      etablissement_id
-    )
-    VALUES (
-      p_facture_id,
-      -v_total_retour,
-      'especes',
-      'DECAIS-' || v_retour_id::TEXT,
-      v_caller_id,
-      NOW(),
-      p_etablissement_id
-    )
-    RETURNING id INTO v_decaissement_id;
-  END IF;
+  -- Note: We don't create a negative encaissement because the constraint requires montant > 0
+  -- The invoice adjustment (montant_paye reduction) is sufficient to reflect the return
+  v_decaissement_id := NULL;
   
   -- Return success response
   RETURN json_build_object(
@@ -225,4 +206,4 @@ $$;
 -- Grant execute permission
 GRANT EXECUTE ON FUNCTION process_retour TO authenticated;
 
-COMMENT ON FUNCTION process_retour IS 'Processes a product return: creates return record, increments stock, adjusts invoice, and creates decaissement if needed';
+COMMENT ON FUNCTION process_retour IS 'Processes a product return: creates return record, increments stock, and adjusts invoice amounts';
