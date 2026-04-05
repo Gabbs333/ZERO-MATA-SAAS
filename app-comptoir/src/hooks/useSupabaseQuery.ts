@@ -2,6 +2,7 @@ import { useQuery, UseQueryOptions, keepPreviousData } from '@tanstack/react-que
 import { supabase } from '../config/supabase';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import type { CommandeWithDetails, StockWithProduit, FactureWithDetails } from '../types/database.types';
+import { useAuthStore } from '../store/authStore';
 
 type QueryFunction<T> = (supabase: SupabaseClient<any, "public", any>) => PromiseLike<{ data: T | null; error: PostgrestError | null }>;
 
@@ -21,14 +22,19 @@ export function useSupabaseQuery<T>(
   });
 }
 
-// Hook pour récupérer les commandes en attente
+// Hook pour récupérer les commandes en attente (filtré par établissement)
 export function useCommandesEnAttente(limit: number = 50) {
+  const { profile } = useAuthStore();
+  const etablissementId = profile?.etablissement_id;
+
   return useSupabaseQuery<CommandeWithDetails[]>(
-    ['commandes', 'en_attente', limit],
+    ['commandes', 'en_attente', limit, etablissementId],
     async (supabase) => {
+      if (!etablissementId) return { data: [], error: null };
+
       console.log('Fetching commandes (MANUAL JOINS)...');
       
-      // 1. Récupérer les commandes brutes
+      // 1. Récupérer les commandes brutes filtrées par établissement
       const { data: commandes, error: cmdError } = await supabase
         .from('commandes')
         .select(`
@@ -41,7 +47,8 @@ export function useCommandesEnAttente(limit: number = 50) {
           serveuse_id,
           etablissement_id
         `)
-        .eq('statut', 'en_attente') // Filtre actif
+        .eq('statut', 'en_attente')
+        .eq('etablissement_id', etablissementId)
         .order('date_creation', { ascending: false })
         .limit(limit);
       
@@ -71,16 +78,18 @@ export function useCommandesEnAttente(limit: number = 50) {
         `)
         .in('commande_id', commandeIds);
 
-      // Fetch Tables
+      // Fetch Tables (filtré par établissement)
       const { data: tables } = await supabase
         .from('tables')
         .select('id, numero')
+        .eq('etablissement_id', etablissementId)
         .in('id', tableIds);
 
       // Fetch Profiles (Serveuses)
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, nom, prenom')
+        .eq('etablissement_id', etablissementId)
         .in('id', serveuseIds);
 
       // 3. Reconstituer les objets
@@ -96,15 +105,14 @@ export function useCommandesEnAttente(limit: number = 50) {
       return { data: enrichedData as any, error: null };
     },
     {
-      // Optimisation des performances
-      // Réduire le staleTime pour les commandes en attente car c'est critique
-      staleTime: 1000 * 10, // 10 secondes (au lieu de 60s)
-      refetchInterval: 1000 * 30, // Polling de secours toutes les 30s
+      enabled: !!etablissementId,
+      staleTime: 1000 * 10,
+      refetchInterval: 1000 * 30,
     }
   );
 }
 
-// Hook pour récupérer l'historique des commandes avec filtres
+// Hook pour récupérer l'historique des commandes avec filtres (filtré par établissement)
 export function useCommandesHistory(
   filters: {
     startDate?: string;
@@ -115,9 +123,14 @@ export function useCommandesHistory(
   },
   limit: number = 50
 ) {
+  const { profile } = useAuthStore();
+  const etablissementId = profile?.etablissement_id;
+
   return useSupabaseQuery<CommandeWithDetails[]>(
-    ['commandes', 'history', filters, limit],
+    ['commandes', 'history', filters, limit, etablissementId],
     async (supabase) => {
+      if (!etablissementId) return { data: [], error: null };
+
       console.log('Fetching history commandes...', filters);
       
       let query = supabase
@@ -132,6 +145,7 @@ export function useCommandesHistory(
           serveuse_id,
           etablissement_id
         `)
+        .eq('etablissement_id', etablissementId)
         .order('date_creation', { ascending: false })
         .limit(limit);
 
@@ -183,16 +197,18 @@ export function useCommandesHistory(
         `)
         .in('commande_id', commandeIds);
 
-      // Fetch Tables
+      // Fetch Tables (filtré par établissement)
       const { data: tables } = await supabase
         .from('tables')
         .select('id, numero')
+        .eq('etablissement_id', etablissementId)
         .in('id', tableIds);
 
       // Fetch Profiles (Serveuses)
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, nom, prenom')
+        .eq('etablissement_id', etablissementId)
         .in('id', serveuseIds);
 
       // Reconstituer les objets
@@ -206,50 +222,72 @@ export function useCommandesHistory(
       return { data: enrichedData as any, error: null };
     },
     {
+      enabled: !!etablissementId,
       placeholderData: keepPreviousData,
-      staleTime: 1000 * 60, // 1 minute
+      staleTime: 1000 * 60,
     }
   );
 }
 
-// Hook pour récupérer la liste des serveuses
+// Hook pour récupérer la liste des serveuses (filtré par établissement)
 export function useServeuses() {
+  const { profile } = useAuthStore();
+  const etablissementId = profile?.etablissement_id;
+
   return useSupabaseQuery<{ id: string; nom: string; prenom: string }[]>(
-    ['serveuses'],
+    ['serveuses', etablissementId],
     async (supabase) => {
+      if (!etablissementId) return { data: [], error: null };
+
       const { data, error } = await supabase
         .from('profiles')
         .select('id, nom, prenom')
-        .eq('role', 'serveuse'); // Assuming 'role' exists and is used to identify waitstaff
+        .eq('role', 'serveuse')
+        .eq('etablissement_id', etablissementId);
         
       if (error) throw error;
       return { data, error: null };
     },
     {
-      staleTime: 1000 * 60 * 60, // 1 hour
+      enabled: !!etablissementId,
+      staleTime: 1000 * 60 * 60,
     }
   );
 }
 
-// Hook pour récupérer le stock
+// Hook pour récupérer le stock (filtré par établissement)
 export function useStock() {
+  const { profile } = useAuthStore();
+  const etablissementId = profile?.etablissement_id;
+
   return useSupabaseQuery<StockWithProduit[]>(
-    ['stocks'],
-    (supabase) =>
-      supabase
+    ['stocks', etablissementId],
+    (supabase) => {
+      if (!etablissementId) return Promise.resolve({ data: [], error: null });
+      return supabase
         .from('stocks')
         .select('*, produits(*)')
-        .order('produits(nom)', { ascending: true })
+        .eq('etablissement_id', etablissementId)
+        .order('produits(nom)', { ascending: true });
+    },
+    { enabled: !!etablissementId }
   );
 }
 
-// Hook pour récupérer les factures
+// Hook pour récupérer les factures (filtré par établissement)
 export function useFactures(statut?: string, limit: number = 50, startDate?: string, endDate?: string) {
-  const queryKey = statut ? ['factures', statut, limit, startDate, endDate] : ['factures', 'all', limit, startDate, endDate];
+  const { profile } = useAuthStore();
+  const etablissementId = profile?.etablissement_id;
+
+  const queryKey = statut 
+    ? ['factures', statut, limit, startDate, endDate, etablissementId] 
+    : ['factures', 'all', limit, startDate, endDate, etablissementId];
   
   return useSupabaseQuery<FactureWithDetails[]>(
     queryKey,
     async (supabase) => {
+      if (!etablissementId) return { data: [], error: null };
+
       let query = supabase
         .from('factures')
         .select(`
@@ -262,6 +300,7 @@ export function useFactures(statut?: string, limit: number = 50, startDate?: str
           ), 
           encaissements (*)
         `)
+        .eq('etablissement_id', etablissementId)
         .order('date_generation', { ascending: false });
 
       if (limit > 0 && !startDate) {
@@ -281,25 +320,43 @@ export function useFactures(statut?: string, limit: number = 50, startDate?: str
       }
 
       return query;
-    }
+    },
+    { enabled: !!etablissementId }
   );
 }
 
-// Hook pour récupérer les alertes de stock bas
+// Hook pour récupérer les alertes de stock bas (filtré par établissement)
 export function useStockAlerts() {
+  const { profile } = useAuthStore();
+  const etablissementId = profile?.etablissement_id;
+
   return useSupabaseQuery(
-    ['stocks', 'alerts'],
-    (supabase) => supabase.rpc('check_stock_alerts')
+    ['stocks', 'alerts', etablissementId],
+    async (supabase) => {
+      if (!etablissementId) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('stocks')
+        .select('*, produits(nom)')
+        .eq('etablissement_id', etablissementId)
+        .lte('quantite_actuelle', 5); // Alert if stock <= 5
+      
+      if (error) throw error;
+      return { data, error: null };
+    },
+    { enabled: !!etablissementId }
   );
 }
 
-// Hook pour récupérer les alertes de factures impayées
+// Hook pour récupérer les alertes de factures impayées (filtré par établissement)
 export function useFacturesImpayeesAlerts() {
+  const { profile } = useAuthStore();
+  const etablissementId = profile?.etablissement_id;
+
   return useSupabaseQuery(
-    ['factures', 'impayees', 'alerts'],
+    ['factures', 'impayees', 'alerts', etablissementId],
     async (supabase) => {
-      // Utilisation d'une requête directe au lieu de RPC pour plus de robustesse
-      // Critère: Factures non payées datant de plus de 24h
+      if (!etablissementId) return { data: [], error: null };
+
       const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       
       const { data, error } = await supabase
@@ -312,15 +369,17 @@ export function useFacturesImpayeesAlerts() {
           date_generation,
           statut
         `)
+        .eq('etablissement_id', etablissementId)
         .neq('statut', 'payee')
         .lt('date_generation', yesterday);
 
       if (error) {
         console.warn("Erreur récupération alertes factures (fallback)", error);
-        return { data: [], error: null }; // On ne bloque pas l'app pour ça
+        return { data: [], error: null };
       }
       
       return { data: data || [], error: null };
-    }
+    },
+    { enabled: !!etablissementId }
   );
 }
