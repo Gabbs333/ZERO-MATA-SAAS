@@ -14,7 +14,8 @@ import {
   Package, 
   LogOut, 
   Store,
-  Clock
+  Clock,
+  ArrowLeftCircle
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -62,6 +63,7 @@ export default function Layout({ children }: LayoutProps) {
     { text: 'Factures', icon: Receipt, path: '/factures' },
     { text: 'Historique', icon: Clock, path: '/historique' },
     { text: 'Stock', icon: Package, path: '/stock' },
+    { text: 'Retours', icon: ArrowLeftCircle, path: '/retours' },
   ];
 
   const handleLogout = async () => {

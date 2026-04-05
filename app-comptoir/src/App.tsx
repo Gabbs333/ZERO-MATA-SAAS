@@ -10,6 +10,7 @@ import ValidationScreen from './screens/ValidationScreen';
 import FacturesScreen from './screens/FacturesScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import StockScreen from './screens/StockScreen';
+import { RetoursScreen } from './screens/RetoursScreen';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -116,6 +117,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <StockScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/retours"
+            element={
+              <ProtectedRoute>
+                <RetoursScreen />
               </ProtectedRoute>
             }
           />

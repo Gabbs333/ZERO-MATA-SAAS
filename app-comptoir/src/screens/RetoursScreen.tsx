@@ -92,7 +92,7 @@ export function RetoursScreen() {
 
   const totalRetour = retourItems.reduce((sum, item) => sum + item.montant_ligne, 0);
 
-  // Note: formatMontant is replaced by formatPrice from utils
+  // Note: formatPrice is replaced by formatPrice from utils
 
   const handleSelectFacture = (facture: FactureWithDetails) => {
     setSelectedFacture(facture);
@@ -264,9 +264,9 @@ export function RetoursScreen() {
               </div>
               <div className="flex gap-4 text-sm">
                 <span className="text-neutral-500 dark:text-neutral-400">Total facture:</span>
-                <span className="font-bold text-primary dark:text-white">{formatMontant(selectedFacture.montant_total)}</span>
+                <span className="font-bold text-primary dark:text-white">{formatPrice(selectedFacture.montant_total)}</span>
                 <span className="text-neutral-500 dark:text-neutral-400">Payé:</span>
-                <span className="font-bold text-green-600 dark:text-green-400">{formatMontant(selectedFacture.montant_paye)}</span>
+                <span className="font-bold text-green-600 dark:text-green-400">{formatPrice(selectedFacture.montant_paye)}</span>
               </div>
             </div>
 
@@ -298,11 +298,11 @@ export function RetoursScreen() {
                           <div>
                             <p className="font-medium text-primary dark:text-white">{item.nom_produit}</p>
                             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                              {formatMontant(item.prix_unitaire)} x {item.quantite}
+                              {formatPrice(item.prix_unitaire)} x {item.quantite}
                             </p>
                           </div>
                         </div>
-                        <span className="font-bold text-primary dark:text-white">{formatMontant(item.prix_unitaire * item.quantite)}</span>
+                        <span className="font-bold text-primary dark:text-white">{formatPrice(item.prix_unitaire * item.quantite)}</span>
                       </div>
                       
                       {isSelected && selectedItem && (
@@ -338,7 +338,7 @@ export function RetoursScreen() {
                             </button>
                           </div>
                           <span className="ml-auto text-sm font-bold text-primary dark:text-white">
-                            Sous-total: {formatMontant(selectedItem.montant_ligne)}
+                            Sous-total: {formatPrice(selectedItem.montant_ligne)}
                           </span>
                         </div>
                       )}
@@ -369,7 +369,7 @@ export function RetoursScreen() {
               <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-lg font-bold text-primary dark:text-white">Total du retour</span>
-                  <span className="text-2xl font-bold text-semantic-red">{formatMontant(totalRetour)}</span>
+                  <span className="text-2xl font-bold text-semantic-red">{formatPrice(totalRetour)}</span>
                 </div>
                 <button
                   onClick={handleProcessRetour}
@@ -418,7 +418,7 @@ export function RetoursScreen() {
                     <span className="text-neutral-500 dark:text-neutral-400">
                       {format(new Date(facture.date_generation), 'dd MMM yyyy', { locale: fr })}
                     </span>
-                    <span className="font-bold text-primary dark:text-white">{formatMontant(facture.montant_total)}</span>
+                    <span className="font-bold text-primary dark:text-white">{formatPrice(facture.montant_total)}</span>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${
