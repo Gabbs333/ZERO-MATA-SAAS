@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { formatPrice } from '../lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { ArrowLeft, Package, Receipt, Search, X, CheckCircle, AlertCircle, Calendar } from 'lucide-react';
+import { ArrowLeft, Package, Receipt, Search, X, CheckCircle, Calendar } from 'lucide-react';
 import type { Facture, CommandeItem } from '../types/database.types';
 
 interface FactureWithDetails extends Facture {
@@ -38,7 +38,7 @@ export function RetoursScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('week');
 
-  // Fetch factures payees ou partiellement payees
+  // Fetch toutes les factures (payees, partiellement payees, et en attente)
   const { data: factures, isLoading, refetch } = useSupabaseQuery<FactureWithDetails[]>(
     ['factures_retours', profile?.etablissement_id],
     async () => {
@@ -52,12 +52,12 @@ export function RetoursScreen() {
             id,
             numero_commande,
             tables (numero),
-            profiles!commandes_serveuse_id_fkey (nom, prenom),
+            profiles (nom, prenom),
             commande_items (*)
           )
         `)
         .eq('etablissement_id', profile.etablissement_id)
-        .in('statut', ['payee', 'partiellement_payee'])
+        .in('statut', ['payee', 'partiellement_payee', 'en_attente_paiement'])
         .order('date_generation', { ascending: false });
 
       return { data: data as unknown as FactureWithDetails[], error };
@@ -91,8 +91,6 @@ export function RetoursScreen() {
   });
 
   const totalRetour = retourItems.reduce((sum, item) => sum + item.montant_ligne, 0);
-
-  // Note: formatPrice is replaced by formatPrice from utils
 
   const handleSelectFacture = (facture: FactureWithDetails) => {
     setSelectedFacture(facture);
@@ -172,9 +170,9 @@ export function RetoursScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-dark-bg pb-20 md:pb-6">
+    <div className="min-h-screen bg-background-light dark:bg-background-dark pb-20 md:pb-6">
       {/* Header */}
-      <div className="p-4 md:p-6 bg-white dark:bg-dark-card/30 dark:backdrop-blur-xl border-b border-neutral-200 dark:border-white/5">
+      <div className="p-4 md:p-6 bg-white/80 dark:bg-neutral-900/60 backdrop-blur-xl border-b border-neutral-200/50 dark:border-white/5">
         <div className="flex items-center gap-4 mb-4">
           <button
             onClick={() => setSelectedFacture(null)}
@@ -183,9 +181,9 @@ export function RetoursScreen() {
             <ArrowLeft className="w-5 h-5 text-neutral-600 dark:text-neutral-400" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-primary dark:text-white font-display">Retours Produits</h1>
+            <h1 className="text-2xl font-bold text-neutral-900 dark:text-white font-display">Retours Produits</h1>
             <p className="text-neutral-500 dark:text-neutral-400 text-sm">
-              Initiez les retours sur les factures payées
+              Initiez les retours sur les factures
             </p>
           </div>
         </div>
@@ -199,7 +197,7 @@ export function RetoursScreen() {
                 placeholder="Rechercher par numéro de commande ou serveur..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-primary dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
               />
             </div>
             
@@ -245,10 +243,10 @@ export function RetoursScreen() {
             )}
 
             {/* Facture info */}
-            <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
+            <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="text-lg font-bold text-primary dark:text-white">
+                  <h2 className="text-lg font-bold text-neutral-900 dark:text-white">
                     Commande {selectedFacture.commandes?.numero_commande}
                   </h2>
                   <p className="text-sm text-neutral-500 dark:text-neutral-400">
@@ -264,15 +262,15 @@ export function RetoursScreen() {
               </div>
               <div className="flex gap-4 text-sm">
                 <span className="text-neutral-500 dark:text-neutral-400">Total facture:</span>
-                <span className="font-bold text-primary dark:text-white">{formatPrice(selectedFacture.montant_total)}</span>
+                <span className="font-bold text-neutral-900 dark:text-white">{formatPrice(selectedFacture.montant_total)}</span>
                 <span className="text-neutral-500 dark:text-neutral-400">Payé:</span>
                 <span className="font-bold text-green-600 dark:text-green-400">{formatPrice(selectedFacture.montant_paye)}</span>
               </div>
             </div>
 
             {/* Items selection */}
-            <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
-              <h3 className="text-lg font-bold text-primary dark:text-white mb-4">Articles à retourner</h3>
+            <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
+              <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-4">Articles à retourner</h3>
               <div className="space-y-3">
                 {selectedFacture.commandes?.commande_items?.map((item) => {
                   const isSelected = retourItems.some(i => i.commande_item_id === item.id);
@@ -296,13 +294,13 @@ export function RetoursScreen() {
                             {isSelected && <CheckCircle className="w-4 h-4 text-white" />}
                           </div>
                           <div>
-                            <p className="font-medium text-primary dark:text-white">{item.nom_produit}</p>
+                            <p className="font-medium text-neutral-900 dark:text-white">{item.nom_produit}</p>
                             <p className="text-xs text-neutral-500 dark:text-neutral-400">
                               {formatPrice(item.prix_unitaire)} x {item.quantite}
                             </p>
                           </div>
                         </div>
-                        <span className="font-bold text-primary dark:text-white">{formatPrice(item.prix_unitaire * item.quantite)}</span>
+                        <span className="font-bold text-neutral-900 dark:text-white">{formatPrice(item.prix_unitaire * item.quantite)}</span>
                       </div>
                       
                       {isSelected && selectedItem && (
@@ -325,7 +323,7 @@ export function RetoursScreen() {
                               value={selectedItem.quantite_retournee}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => handleUpdateQuantity(item.id, parseInt(e.target.value) || 1)}
-                              className="w-16 text-center py-1.5 bg-neutral-100 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-lg text-primary dark:text-white"
+                              className="w-16 text-center py-1.5 bg-neutral-100 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-lg text-neutral-900 dark:text-white"
                             />
                             <button
                               onClick={(e) => {
@@ -337,7 +335,7 @@ export function RetoursScreen() {
                               +
                             </button>
                           </div>
-                          <span className="ml-auto text-sm font-bold text-primary dark:text-white">
+                          <span className="ml-auto text-sm font-bold text-neutral-900 dark:text-white">
                             Sous-total: {formatPrice(selectedItem.montant_ligne)}
                           </span>
                         </div>
@@ -350,15 +348,15 @@ export function RetoursScreen() {
 
             {/* Motif */}
             {retourItems.length > 0 && (
-              <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
-                <label className="block text-sm font-bold text-primary dark:text-white mb-2">
+              <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
+                <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-2">
                   Motif du retour (optionnel)
                 </label>
                 <textarea
                   value={motif}
                   onChange={(e) => setMotif(e.target.value)}
                   placeholder="Ex: Produit défectueux, erreur de commande..."
-                  className="w-full p-3 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-primary dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none resize-none"
+                  className="w-full p-3 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none resize-none"
                   rows={3}
                 />
               </div>
@@ -366,9 +364,9 @@ export function RetoursScreen() {
 
             {/* Summary and submit */}
             {retourItems.length > 0 && (
-              <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
+              <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-lg font-bold text-primary dark:text-white">Total du retour</span>
+                  <span className="text-lg font-bold text-neutral-900 dark:text-white">Total du retour</span>
                   <span className="text-2xl font-bold text-semantic-red">{formatPrice(totalRetour)}</span>
                 </div>
                 <button
@@ -392,13 +390,12 @@ export function RetoursScreen() {
             )}
           </div>
         ) : (
-          /* Liste des factures */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredFactures?.map((facture) => (
               <div
                 key={facture.id}
                 onClick={() => handleSelectFacture(facture)}
-                className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden cursor-pointer hover:border-primary/30 dark:hover:border-dark-accent/30 transition-all"
+                className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden cursor-pointer hover:border-primary/30 dark:hover:border-dark-accent/30 transition-all"
               >
                 <div className="p-4">
                   <div className="flex items-center gap-3 mb-3">
@@ -406,7 +403,7 @@ export function RetoursScreen() {
                       <Receipt className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-primary dark:text-white">
+                      <h3 className="font-bold text-sm text-neutral-900 dark:text-white">
                         {facture.commandes?.numero_commande}
                       </h3>
                       <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -418,15 +415,17 @@ export function RetoursScreen() {
                     <span className="text-neutral-500 dark:text-neutral-400">
                       {format(new Date(facture.date_generation), 'dd MMM yyyy', { locale: fr })}
                     </span>
-                    <span className="font-bold text-primary dark:text-white">{formatPrice(facture.montant_total)}</span>
+                    <span className="font-bold text-neutral-900 dark:text-white">{formatPrice(facture.montant_total)}</span>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${
                       facture.statut === 'payee'
                         ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-                        : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+                        : facture.statut === 'partiellement_payee'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+                        : 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400'
                     }`}>
-                      {facture.statut === 'payee' ? 'Payée' : 'Partielle'}
+                      {facture.statut === 'payee' ? 'Payée' : facture.statut === 'partiellement_payee' ? 'Partielle' : 'En attente'}
                     </span>
                     {facture.statut_retour && facture.statut_retour !== 'sans_retour' && (
                       <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400">
