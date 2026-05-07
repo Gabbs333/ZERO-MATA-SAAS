@@ -16,13 +16,13 @@ import { EchangesScreen } from './screens/EchangesScreen';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 3, // Increase retries further
-      retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
-      staleTime: 60 * 1000, // Back to 60s to avoid unnecessary fetches if data is fresh enough
-      refetchOnWindowFocus: true,
+      retry: 2,
+      retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 10000),
+      staleTime: 30 * 1000,
+      gcTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,  // Prevent cascading refetches on tab return
       refetchOnMount: true,
       refetchOnReconnect: true,
-      // networkMode removed to allow default behavior (pauses when offline)
     },
   },
 });
@@ -53,24 +53,23 @@ function App() {
 
     // Gestionnaire de visibilité et de connexion
     const handleReconnection = () => {
-      // Seulement si on est en ligne
-      if (navigator.onLine && document.visibilityState === 'visible') {
-        console.log('App active and online, verifying state...');
+      if (!navigator.onLine) return;
+      if (document.visibilityState !== 'visible') return;
 
-        // Petit délai pour laisser la connexion se stabiliser
-        setTimeout(() => {
-          supabase.auth.getSession().then(({ data: { session: currentSession }, error }) => {
-            if (!currentSession || error) {
-              console.warn('Session invalid, letting auth store handle it');
-            } else {
-              // Invalider force le rechargement même si les données sont "fresh" (staleTime)
-              // C'est crucial pour le retour sur l'app
-              queryClient.invalidateQueries({ type: 'active' });
-              console.log('Active queries invalidated and refetching...');
-            }
-          });
-        }, 500);
-      }
+      console.log('App active, reconnecting...');
+
+      // Refresh auth session first, then revalidate data
+      supabase.auth.getSession().then(({ data: { session: currentSession }, error }) => {
+        if (error || !currentSession) {
+          console.warn('Session refresh failed on reconnection');
+          return;
+        }
+        // Invalidate stale queries to force refetch on next render
+        queryClient.invalidateQueries();
+        console.log('Reconnection: queries invalidated');
+      }).catch(err => {
+        console.warn('Reconnection error:', err);
+      });
     };
 
     document.addEventListener('visibilitychange', handleReconnection);

@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from './store/authStore';
+import { supabase } from './config/supabase';
 import { Layout } from './components/Layout';
 import { LoginScreen } from './screens/LoginScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
@@ -19,6 +21,20 @@ import { TransactionsScreen } from './screens/TransactionsScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { UserProfileScreen } from './screens/UserProfileScreen';
 import { SystemActivityScreen } from './screens/SystemActivityScreen';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+      staleTime: 30 * 1000,
+      gcTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnMount: true,
+      refetchOnReconnect: true,
+    },
+  },
+});
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuthStore();
@@ -46,143 +62,173 @@ function App() {
 
   useEffect(() => {
     initialize();
-  }, [initialize]);
+
+    const handleReconnection = () => {
+      if (!navigator.onLine) return;
+      if (document.visibilityState !== 'visible') return;
+
+      console.log('App active, reconnecting...');
+
+      supabase.auth.getSession().then(({ data: { session: currentSession }, error }) => {
+        if (error || !currentSession) {
+          console.warn('Session refresh failed on reconnection');
+          return;
+        }
+        queryClient.invalidateQueries();
+        console.log('Reconnection: queries invalidated');
+      }).catch((err) => {
+        console.warn('Reconnection error:', err);
+      });
+    };
+
+    document.addEventListener('visibilitychange', handleReconnection);
+    window.addEventListener('focus', handleReconnection);
+    window.addEventListener('online', handleReconnection);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleReconnection);
+      window.removeEventListener('focus', handleReconnection);
+      window.removeEventListener('online', handleReconnection);
+    };
+  }, []);
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginScreen />} />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <DashboardScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/stock"
-          element={
-            <ProtectedRoute>
-              <StockScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/finances"
-          element={
-            <ProtectedRoute>
-              <FinancialDashboardScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/ravitaillements"
-          element={
-            <ProtectedRoute>
-              <RavitaillementScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/ravitaillements/historique"
-          element={
-            <ProtectedRoute>
-              <SupplyHistoryScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/produits"
-          element={
-            <ProtectedRoute>
-              <ProduitsScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/tables"
-          element={
-            <ProtectedRoute>
-              <TablesScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/profits"
-          element={
-            <ProtectedRoute>
-              <ProfitLossScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/creances"
-          element={
-            <ProtectedRoute>
-              <CreancesScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/retours"
-          element={
-            <ProtectedRoute>
-              <RetoursScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/rapports"
-          element={
-            <ProtectedRoute>
-              <RapportsScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/utilisateurs"
-          element={
-            <ProtectedRoute>
-              <UtilisateursScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/transactions"
-          element={
-            <ProtectedRoute>
-              <TransactionsScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/audit"
-          element={
-            <ProtectedRoute>
-              <AuditLogScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/profil"
-          element={
-            <ProtectedRoute>
-              <UserProfileScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/activite"
-          element={
-            <ProtectedRoute>
-              <SystemActivityScreen />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginScreen />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stock"
+            element={
+              <ProtectedRoute>
+                <StockScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/finances"
+            element={
+              <ProtectedRoute>
+                <FinancialDashboardScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ravitaillements"
+            element={
+              <ProtectedRoute>
+                <RavitaillementScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ravitaillements/historique"
+            element={
+              <ProtectedRoute>
+                <SupplyHistoryScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/produits"
+            element={
+              <ProtectedRoute>
+                <ProduitsScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tables"
+            element={
+              <ProtectedRoute>
+                <TablesScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profits"
+            element={
+              <ProtectedRoute>
+                <ProfitLossScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/creances"
+            element={
+              <ProtectedRoute>
+                <CreancesScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/retours"
+            element={
+              <ProtectedRoute>
+                <RetoursScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/rapports"
+            element={
+              <ProtectedRoute>
+                <RapportsScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/utilisateurs"
+            element={
+              <ProtectedRoute>
+                <UtilisateursScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transactions"
+            element={
+              <ProtectedRoute>
+                <TransactionsScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/audit"
+            element={
+              <ProtectedRoute>
+                <AuditLogScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profil"
+            element={
+              <ProtectedRoute>
+                <UserProfileScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activite"
+            element={
+              <ProtectedRoute>
+                <SystemActivityScreen />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }
 

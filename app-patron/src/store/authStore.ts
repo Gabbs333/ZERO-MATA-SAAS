@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 import { supabase } from '../config/supabase';
+import type { User, Session } from '@supabase/supabase-js';
 import type { Profile } from '../types/database.types';
 
 interface AuthState {
-  user: any | null;
+  user: User | null;
+  session: Session | null;
   profile: Profile | null;
   loading: boolean;
+  error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
@@ -13,68 +16,158 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
+  session: null,
   profile: null,
   loading: true,
+  error: null,
 
   initialize: async () => {
+    // Avoid double initialization
+    if (useAuthStore.getState().user && !useAuthStore.getState().loading) return;
+
     try {
       const {
         data: { session },
         error: sessionError
       } = await supabase.auth.getSession();
 
-      if (sessionError) throw sessionError;
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        set({ loading: false });
+        return;
+      }
 
       if (session?.user) {
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-          
-        if (profileError) {
-            console.error('Error fetching profile:', profileError);
-            await supabase.auth.signOut();
-            set({ user: null, profile: null, loading: false });
-            return;
-        }
+        try {
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
 
-        // Vérifier que l'utilisateur est gérant ou patron
-        if (profile && (profile.role === 'gerant' || profile.role === 'patron')) {
-          // Vérifier le statut de l'établissement
-          if (profile.etablissement_id) {
-            const { data: etablissement, error: etabError } = await supabase
-              .from('etablissements')
-              .select('actif, statut_abonnement')
-              .eq('id', profile.etablissement_id)
-              .single();
-            
-            if (etabError || !etablissement) {
-                console.error('Error fetching establishment:', etabError);
-                await supabase.auth.signOut();
-                set({ user: null, profile: null, loading: false });
-                throw new Error('Votre établissement est introuvable ou a été supprimé. Contactez l\'administrateur.');
-            } else if (!etablissement.actif || etablissement.statut_abonnement !== 'actif') {
-              await supabase.auth.signOut();
-              set({ user: null, profile: null, loading: false });
-              throw new Error('Votre abonnement a expiré ou votre établissement est suspendu. Contactez l\'administrateur.');
+          if (profileError) {
+            console.error('Error fetching profile:', profileError);
+            set({ error: `Erreur profil: ${profileError.message}` });
+          }
+
+          let fullProfile = profileData;
+
+          if (profileData?.etablissement_id) {
+            try {
+              const { data: etablissement } = await supabase
+                .from('etablissements')
+                .select('*')
+                .eq('id', profileData.etablissement_id)
+                .maybeSingle();
+
+              if (etablissement) {
+                fullProfile = { ...profileData, etablissement };
+              }
+            } catch (etabError) {
+              console.error('Error fetching establishment:', etabError);
             }
           }
 
-          set({ user: session.user, profile, loading: false });
-        } else {
-          console.warn('Unauthorized role:', profile?.role);
-          await supabase.auth.signOut();
-          set({ user: null, profile: null, loading: false });
-          throw new Error('Accès non autorisé. Cette application est réservée aux gérants et patrons.');
+          const profile = fullProfile;
+
+          // Vérifier que l'utilisateur est gérant ou patron
+          if (profile && profile.role !== 'gerant' && profile.role !== 'patron') {
+            console.warn('Unauthorized role:', profile?.role);
+            await supabase.auth.signOut();
+            set({ user: null, session: null, profile: null, loading: false, error: 'Accès non autorisé. Cette application est réservée aux gérants et patrons.' });
+            return;
+          }
+
+          if (profile?.etablissement_id) {
+            const etablissement = profile.etablissement;
+
+            if (!etablissement) {
+              console.error('Establishment not found for ID:', profile.etablissement_id);
+              await supabase.auth.signOut();
+              set({ user: null, session: null, profile: null, loading: false, error: 'Votre établissement est introuvable ou a été supprimé.' });
+              return;
+            }
+
+            if (!etablissement.actif || etablissement.statut_abonnement !== 'actif') {
+              console.warn('Establishment inactive or subscription expired');
+              await supabase.auth.signOut();
+              set({ user: null, session: null, profile: null, loading: false, error: 'Abonnement expiré ou suspendu' });
+              return;
+            }
+          }
+
+          set({
+            user: session.user,
+            session,
+            profile: profile || null,
+            loading: false,
+          });
+        } catch (dataError) {
+          console.error('Data fetching error:', dataError);
+          set({
+            user: session.user,
+            session,
+            profile: null,
+            loading: false,
+            error: 'Erreur chargement données'
+          });
         }
       } else {
-        set({ user: null, profile: null, loading: false });
+        set({ loading: false });
       }
     } catch (error) {
       console.error('Error initializing auth:', error);
-      set({ user: null, profile: null, loading: false });
+      set({ loading: false });
     }
+
+    // SINGLE auth state change listener (no duplicates)
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user?.id);
+
+      if (event === 'SIGNED_OUT') {
+        set({ user: null, session: null, profile: null, loading: false });
+        return;
+      }
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        if (session) {
+          const currentProfile = useAuthStore.getState().profile;
+          // Only re-fetch profile if it changed or doesn't exist
+          if (!currentProfile || currentProfile.id !== session.user.id) {
+            try {
+              const { data: profileData } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .maybeSingle();
+
+              let fullProfile = profileData;
+              if (profileData?.etablissement_id) {
+                const { data: etablissement } = await supabase
+                  .from('etablissements')
+                  .select('*')
+                  .eq('id', profileData.etablissement_id)
+                  .maybeSingle();
+                if (etablissement) fullProfile = { ...profileData, etablissement };
+              }
+
+              // Vérifier le rôle dans le listener aussi
+              if (fullProfile && fullProfile.role !== 'gerant' && fullProfile.role !== 'patron') {
+                await supabase.auth.signOut();
+                set({ user: null, session: null, profile: null, loading: false, error: 'Accès non autorisé.' });
+                return;
+              }
+
+              set({ session, user: session.user, profile: fullProfile || null });
+            } catch {
+              set({ session, user: session.user });
+            }
+          } else {
+            set({ session, user: session.user });
+          }
+        }
+      }
+    });
   },
 
   signIn: async (email: string, password: string) => {
@@ -87,55 +180,61 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (error) throw error;
 
       if (data.user) {
-        const { data: profile, error: profileError } = await supabase
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', data.user.id)
-          .single();
+          .maybeSingle();
 
         if (profileError) throw profileError;
 
+        let fullProfile = profileData;
+        if (profileData?.etablissement_id) {
+          const { data: etablissement } = await supabase
+            .from('etablissements')
+            .select('*')
+            .eq('id', profileData.etablissement_id)
+            .maybeSingle();
+          if (etablissement) fullProfile = { ...profileData, etablissement };
+        }
+
+        const profile = fullProfile;
+
         // Vérifier que l'utilisateur est gérant ou patron
-        if (profile.role !== 'gerant' && profile.role !== 'patron') {
+        if (profile && profile.role !== 'gerant' && profile.role !== 'patron') {
           await supabase.auth.signOut();
           throw new Error('Accès non autorisé. Cette application est réservée aux gérants et patrons.');
         }
 
-        if (!profile.actif) {
+        if (profile && !profile.actif) {
           await supabase.auth.signOut();
           throw new Error('Votre compte est désactivé. Contactez l\'administrateur.');
         }
 
         // Vérifier le statut de l'établissement
-        if (profile.etablissement_id) {
-          const { data: etablissement, error: etabError } = await supabase
-            .from('etablissements')
-            .select('actif, statut_abonnement')
-            .eq('id', profile.etablissement_id)
-            .single();
-            
-          if (etabError || !etablissement) {
-             console.error('Error fetching establishment during sign in:', etabError);
-             await supabase.auth.signOut();
-             throw new Error('Votre établissement est introuvable ou a été supprimé. Contactez l\'administrateur.');
-          } else if (!etablissement.actif || etablissement.statut_abonnement !== 'actif') {
+        if (profile?.etablissement_id) {
+          const etablissement = profile.etablissement;
+          if (!etablissement) {
             await supabase.auth.signOut();
-            throw new Error('Votre abonnement a expiré ou votre établissement est suspendu. Contactez l\'administrateur.');
+            throw new Error('Votre établissement est introuvable ou a été supprimé.');
+          }
+          if (!etablissement.actif || etablissement.statut_abonnement !== 'actif') {
+            await supabase.auth.signOut();
+            throw new Error('Votre abonnement a expiré ou votre établissement est suspendu.');
           }
         }
 
-        set({ user: data.user, profile });
+        set({ user: data.user, session: data.session, profile: profile || null });
       }
-    } catch (error) {
-      console.error('Error signing in:', error);
-      throw error;
+    } catch (err) {
+      throw err;
     }
   },
 
   signOut: async () => {
     try {
       await supabase.auth.signOut();
-      set({ user: null, profile: null });
+      set({ user: null, session: null, profile: null });
     } catch (error) {
       console.error('Error signing out:', error);
       throw error;
