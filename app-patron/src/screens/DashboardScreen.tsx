@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  startOfDay, 
-  endOfDay, 
-  startOfWeek, 
-  endOfWeek, 
-  startOfMonth, 
-  endOfMonth, 
+import {
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
   subDays,
   format,
   differenceInDays,
@@ -21,10 +21,11 @@ import { useRealtimeSubscription } from '../hooks/useRealtimeSubscription';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import { formatMontant } from '../utils/format';
-import { 
-  Package, 
-  CreditCard, 
-  Wallet, 
+import { useValidateRetour, useRejectRetour } from '../hooks/useSupabaseMutation';
+import {
+  Package,
+  CreditCard,
+  Wallet,
   AlertTriangle,
   TrendingUp,
   Clock,
@@ -32,19 +33,19 @@ import {
   Eye,
   Calendar
 } from 'lucide-react';
-import { 
-  AreaChart, 
-  Area, 
+import {
+  AreaChart,
+  Area,
   BarChart,
   Bar,
   PieChart,
   Pie,
   Cell,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer 
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
 } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 
@@ -65,6 +66,7 @@ export function DashboardScreen() {
   useRealtimeSubscription('factures', '*');
   useRealtimeSubscription('encaissements', '*');
   useRealtimeSubscription('stocks', '*');
+  useRealtimeSubscription('retour_items_en_attente', '*');
 
   useEffect(() => {
     const now = new Date();
@@ -97,7 +99,7 @@ export function DashboardScreen() {
   // );
 
   // Calculate days until expiration
-  // const daysUntilExpiration = etablissement?.date_fin 
+  // const daysUntilExpiration = etablissement?.date_fin
   //   ? differenceInDays(new Date(etablissement.date_fin), new Date())
   //   : null;
 
@@ -137,7 +139,7 @@ export function DashboardScreen() {
         .gte('date_encaissement', dateRange.start.toISOString())
         .lte('date_encaissement', dateRange.end.toISOString())
         .limit(5000);
-      
+
       if (error) {
         console.error('Error fetching encaissements:', error);
         throw error;
@@ -148,38 +150,55 @@ export function DashboardScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
+  // Fetch Plats Servis (nourriture)
+  const { data: platsServisData, isLoading: platsLoading } = useSupabaseQuery(
+    ['plats_servis', dateRange.start.toISOString(), dateRange.end.toISOString()],
+    async () => {
+      if (!profile?.etablissement_id) return { data: null, error: null };
+      const { data, error } = await supabase.rpc('get_plats_servis_stats', {
+        p_date_debut: dateRange.start.toISOString(),
+        p_date_fin: dateRange.end.toISOString()
+      });
+      return { data: data as any, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
   // Client-side KPIs Calculation
   const kpis = useMemo(() => {
     // Robustness: Handle missing data gracefully
     const cmds = commandesData || [];
     const encs = encaissementsData || [];
-    
+
     const ca = cmds.reduce((sum: number, cmd: any) => sum + cmd.montant_total, 0);
     const enc = encs.reduce((sum: number, pay: any) => sum + pay.montant, 0);
     const count = cmds.length;
     const panier_moyen = count > 0 ? ca / count : 0;
-    
+
+    const nbPlats = platsServisData?.total_plats_servis || 0;
+
     return {
       chiffre_affaires: ca,
       encaissements: enc,
       commandes_count: count,
-      panier_moyen
+      panier_moyen,
+      plats_servis: nbPlats
     };
-  }, [commandesData, encaissementsData]);
+  }, [commandesData, encaissementsData, platsServisData]);
 
-  const kpisLoading = cmdLoading || encLoading;
+  const kpisLoading = cmdLoading || encLoading || platsLoading;
 
   // Client-side Chart Data Calculation
   const chartData = useMemo(() => {
     const cmds = commandesData || [];
     const encs = encaissementsData || [];
-    
+
     // Always generate intervals if we have a date range, regardless of data presence
     // This ensures the chart X-axis is always correct
     const isToday = isSameDay(dateRange.start, dateRange.end) || differenceInDays(dateRange.end, dateRange.start) < 1;
     let intervals: Date[];
     let dateFormat: string;
-    
+
     if (isToday) {
       intervals = eachHourOfInterval({ start: dateRange.start, end: dateRange.end });
       dateFormat = 'HH:mm';
@@ -187,23 +206,23 @@ export function DashboardScreen() {
       intervals = eachDayOfInterval({ start: dateRange.start, end: dateRange.end });
       dateFormat = 'dd MMM';
     }
-    
+
     return intervals.map(date => {
       let ca = 0;
       let enc = 0;
-      
+
       if (isToday) {
         // Compare hours for "Today" view
         const hour = getHours(date);
         const dayStr = format(date, 'yyyy-MM-dd');
-        
+
         ca = cmds
           .filter((c: any) => {
             const cDate = parseISO(c.date_creation);
             return getHours(cDate) === hour && format(cDate, 'yyyy-MM-dd') === dayStr;
           })
           .reduce((sum: number, c: any) => sum + c.montant_total, 0);
-          
+
         enc = encs
           .filter((e: any) => {
             const eDate = parseISO(e.date_encaissement);
@@ -213,16 +232,16 @@ export function DashboardScreen() {
       } else {
         // Compare dates (YYYY-MM-DD) for other views to avoid timezone issues
         const dateStr = format(date, 'yyyy-MM-dd');
-        
+
         ca = cmds
           .filter((c: any) => format(parseISO(c.date_creation), 'yyyy-MM-dd') === dateStr)
           .reduce((sum: number, c: any) => sum + c.montant_total, 0);
-          
+
         enc = encs
           .filter((e: any) => format(parseISO(e.date_encaissement), 'yyyy-MM-dd') === dateStr)
           .reduce((sum: number, e: any) => sum + e.montant, 0);
       }
-      
+
       return {
         date: date.toISOString(),
         periode: format(date, dateFormat, { locale: fr }),
@@ -236,9 +255,9 @@ export function DashboardScreen() {
   // Client-side Top Products Calculation
   const advancedAnalytics = useMemo(() => {
     if (!commandesData) return [];
-    
+
     const productMap = new Map<string, { nom_produit: string, quantite: number, ca: number }>();
-    
+
     commandesData.forEach((cmd: any) => {
       cmd.commande_items.forEach((item: any) => {
         const existing = productMap.get(item.produit_id);
@@ -255,7 +274,7 @@ export function DashboardScreen() {
         }
       });
     });
-      
+
     return Array.from(productMap.values())
       .sort((a, b) => b.quantite - a.quantite)
       .slice(0, 5);
@@ -265,16 +284,16 @@ export function DashboardScreen() {
   // Client-side Payment Modes Calculation
   const paymentModes = useMemo(() => {
     if (!encaissementsData) return [];
-    
+
     const modeMap = new Map<string, number>();
     let total = 0;
-    
+
     encaissementsData.forEach((enc: any) => {
       const current = modeMap.get(enc.mode_paiement) || 0;
       modeMap.set(enc.mode_paiement, current + enc.montant);
       total += enc.montant;
     });
-    
+
     return Array.from(modeMap.entries()).map(([mode, montant]) => ({
       mode_paiement: mode,
       montant_total: montant,
@@ -333,6 +352,41 @@ export function DashboardScreen() {
     }
   );
 
+  // Fetch pending returns
+  const { data: pendingReturns, isLoading: returnsLoading } = useSupabaseQuery(
+    ['retours', 'en_attente'],
+    async () => {
+      const { data, error } = await supabase
+        .from('retour_items_en_attente')
+        .select(`
+          *,
+          factures (
+            numero_facture,
+            montant_total
+          ),
+          commandes (
+            numero_commande,
+            tables (numero),
+            profiles (nom, prenom)
+          ),
+          profiles (nom, prenom)
+        `)
+        .is('date_validation', null)
+        .order('date_demande', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching pending returns:', error);
+        return { data: [], error };
+      }
+
+      return { data: data || [], error: null };
+    }
+  );
+
+  // Mutations for returns validation
+  const validateRetour = useValidateRetour();
+  const rejectRetour = useRejectRetour();
+
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-dark-bg pb-20 md:pb-6">
@@ -344,8 +398,8 @@ export function DashboardScreen() {
               key={p}
               onClick={() => setPeriod(p)}
               className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
-                period === p 
-                  ? 'bg-primary text-white dark:bg-dark-accent' 
+                period === p
+                  ? 'bg-primary text-white dark:bg-dark-accent'
                   : 'bg-neutral-100 dark:bg-white/5 text-neutral-500 dark:text-neutral-400 border border-neutral-200/50 dark:border-white/5'
               }`}
             >
@@ -355,8 +409,8 @@ export function DashboardScreen() {
           <button
             onClick={() => setShowDatePicker(!showDatePicker)}
             className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap flex items-center gap-2 ${
-              period === 'custom' 
-                ? 'bg-primary text-white dark:bg-dark-accent' 
+              period === 'custom'
+                ? 'bg-primary text-white dark:bg-dark-accent'
                 : 'bg-neutral-100 dark:bg-white/5 text-neutral-500 dark:text-neutral-400 border border-neutral-200/50 dark:border-white/5'
             }`}
           >
@@ -378,7 +432,7 @@ export function DashboardScreen() {
           <div className="bg-white dark:bg-dark-card w-full max-w-sm rounded-3xl p-6 border border-neutral-200 dark:border-white/10 shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-primary dark:text-white">Filtrer par date</h3>
-              <button 
+              <button
                 onClick={() => setShowDatePicker(false)}
                 className="p-2 hover:bg-neutral-100 dark:hover:bg-white/5 rounded-full transition-colors"
               >
@@ -397,8 +451,8 @@ export function DashboardScreen() {
                     setShowDatePicker(false);
                   }}
                   className={`px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors ${
-                    period === 'today' 
-                      ? 'bg-primary text-white' 
+                    period === 'today'
+                      ? 'bg-primary text-white'
                       : 'bg-neutral-100 dark:bg-white/5 text-neutral-500 hover:text-primary dark:hover:text-white'
                   }`}
                 >
@@ -446,8 +500,8 @@ export function DashboardScreen() {
                     setShowDatePicker(false);
                   }}
                   className={`px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors ${
-                    period === 'month' 
-                      ? 'bg-primary text-white' 
+                    period === 'month'
+                      ? 'bg-primary text-white'
                       : 'bg-neutral-100 dark:bg-white/5 text-neutral-500 hover:text-primary dark:hover:text-white'
                   }`}
                 >
@@ -474,8 +528,8 @@ export function DashboardScreen() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <span className="text-[9px] font-bold text-neutral-400 uppercase ml-1">Début</span>
-                      <input 
-                        type="date" 
+                      <input
+                        type="date"
                         className="w-full px-3 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent dark:border-white/5 rounded-xl text-xs font-bold text-primary dark:text-white outline-none focus:ring-2 focus:ring-primary/20"
                         value={format(dateRange.start, 'yyyy-MM-dd')}
                         onChange={(e) => {
@@ -486,8 +540,8 @@ export function DashboardScreen() {
                     </div>
                     <div className="space-y-1">
                       <span className="text-[9px] font-bold text-neutral-400 uppercase ml-1">Fin</span>
-                      <input 
-                        type="date" 
+                      <input
+                        type="date"
                         className="w-full px-3 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent dark:border-white/5 rounded-xl text-xs font-bold text-primary dark:text-white outline-none focus:ring-2 focus:ring-primary/20"
                         value={format(dateRange.end, 'yyyy-MM-dd')}
                         onChange={(e) => {
@@ -499,7 +553,7 @@ export function DashboardScreen() {
                   </div>
                 </div>
 
-                <button 
+                <button
                   onClick={() => setShowDatePicker(false)}
                   className="w-full py-4 bg-primary dark:bg-dark-accent text-white rounded-2xl font-bold shadow-lg shadow-primary/20 dark:shadow-dark-accent/20 transition-all active:scale-95"
                 >
@@ -526,7 +580,7 @@ export function DashboardScreen() {
                 {stockAlerts.length > 1 && ` +${stockAlerts.length - 1} autres`}
               </p>
             </div>
-            <button 
+            <button
               onClick={() => navigate('/ravitaillements')}
               className="text-red-500 font-bold text-xs underline decoration-red-500/30 underline-offset-4 active:scale-95 transition-transform"
             >
@@ -538,10 +592,10 @@ export function DashboardScreen() {
 
       {/* HUD Stats Section */}
       <div className="flex flex-col gap-4 p-4">
-        
+
         {/* Main Comparison Row */}
         <div className="grid grid-cols-2 gap-3">
-          
+
           {/* Card 1: Daily CA */}
           <div className="flex flex-col gap-1 rounded-2xl p-4 bg-white dark:bg-dark-card/40 dark:backdrop-blur-md border border-neutral-200 dark:border-white/5 shadow-soft hover:border-primary/20 dark:hover:border-dark-accent/30 transition-all group">
             <div className="flex items-center justify-between mb-1">
@@ -565,7 +619,7 @@ export function DashboardScreen() {
           {/* Card 2: Real Collections */}
           <div className="flex flex-col gap-1 rounded-2xl p-4 bg-primary dark:bg-dark-accent text-white border border-primary dark:border-dark-accent shadow-xl shadow-primary/20 dark:shadow-dark-accent/20 relative overflow-hidden group">
             <div className="absolute -right-4 -top-4 size-20 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
-            
+
             <div className="flex items-center justify-between mb-1 z-10">
               <div className="flex items-center gap-1.5 text-white/70">
                 <Wallet className="w-4 h-4" />
@@ -584,6 +638,28 @@ export function DashboardScreen() {
             </div>
           </div>
 
+        </div>
+
+        {/* Card 3: Plats Servis */}
+        <div className="flex flex-col gap-1 rounded-2xl p-4 bg-white dark:bg-dark-card/40 dark:backdrop-blur-md border border-orange-200 dark:border-orange-500/20 shadow-soft hover:border-orange-300 dark:hover:border-orange-400/30 transition-all group">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
+              <span className="text-lg">🍽️</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest">Plats Servis</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <p className="text-primary dark:text-white text-xl font-black tracking-tight">
+              {kpis?.plats_servis || 0} <span className="text-xs font-normal text-neutral-500">plats</span>
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {platsServisData?.plats_par_produit && platsServisData.plats_par_produit.slice(0, 3).map((p: any) => (
+                <span key={p.produit_id} className="text-[10px] text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
+                  {p.produit_nom}: {p.quantite_servie}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Secondary Row: Debt */}
@@ -605,7 +681,7 @@ export function DashboardScreen() {
               <AlertTriangle className="w-3 h-3" />
               Risque Élevé
             </span>
-            <button 
+            <button
               onClick={() => navigate('/creances')}
               className="text-[10px] font-bold text-primary dark:text-white underline decoration-neutral-300 dark:decoration-white/20 underline-offset-4 uppercase tracking-widest active:scale-95 transition-transform"
             >
@@ -640,8 +716,8 @@ export function DashboardScreen() {
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart 
-                  data={chartData} 
+                <AreaChart
+                  data={chartData}
                   margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                 >
                   <defs>
@@ -650,14 +726,14 @@ export function DashboardScreen() {
                       <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <CartesianGrid 
-                    strokeDasharray="3 3" 
-                    vertical={false} 
-                    stroke="currentColor" 
-                    className="text-neutral-100 dark:text-white/5" 
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="currentColor"
+                    className="text-neutral-100 dark:text-white/5"
                   />
-                  <XAxis 
-                    dataKey="date" 
+                  <XAxis
+                    dataKey="date"
                     axisLine={false}
                     tickLine={false}
                     tick={{ fontSize: 9, fontWeight: 700 }}
@@ -670,17 +746,17 @@ export function DashboardScreen() {
                     }}
                     minTickGap={30}
                   />
-                  <YAxis 
+                  <YAxis
                     axisLine={false}
                     tickLine={false}
                     tick={{ fontSize: 9, fontWeight: 700 }}
                     className="text-neutral-400 dark:text-neutral-500"
                     tickFormatter={(val) => val >= 1000 ? `${(val/1000).toFixed(0)}k` : val}
                   />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'rgba(255, 255, 255, 0.9)', 
-                      border: 'none', 
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                      border: 'none',
                       borderRadius: '12px',
                       boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
                       fontSize: '11px',
@@ -691,13 +767,13 @@ export function DashboardScreen() {
                     labelFormatter={(val) => format(new Date(val), 'PPP', { locale: fr })}
                     formatter={(val: number) => [formatMontant(val), 'CA']}
                   />
-                  <Area 
-                    type="monotone" 
-                    dataKey="chiffre_affaires" 
-                    stroke="#3B82F6" 
+                  <Area
+                    type="monotone"
+                    dataKey="chiffre_affaires"
+                    stroke="#3B82F6"
                     strokeWidth={3}
-                    fillOpacity={1} 
-                    fill="url(#colorCA)" 
+                    fillOpacity={1}
+                    fill="url(#colorCA)"
                     animationDuration={1500}
                   />
                 </AreaChart>
@@ -717,7 +793,7 @@ export function DashboardScreen() {
               <p className="text-[10px] text-neutral-400 dark:text-neutral-500 font-bold uppercase tracking-widest mt-0.5">Par volume de vente</p>
             </div>
           </div>
-          
+
           <div className="h-[200px] w-full">
             {advancedLoading ? (
               <div className="h-full w-full flex items-center justify-center">
@@ -730,36 +806,36 @@ export function DashboardScreen() {
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart 
+                <BarChart
                   layout="vertical"
                   data={advancedAnalytics}
                   margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="currentColor" className="text-neutral-100 dark:text-white/5" />
                   <XAxis type="number" hide />
-                  <YAxis 
-                    dataKey="nom_produit" 
-                    type="category" 
-                    axisLine={false} 
+                  <YAxis
+                    dataKey="nom_produit"
+                    type="category"
+                    axisLine={false}
                     tickLine={false}
                     tick={{ fontSize: 9, fontWeight: 700 }}
                     className="text-neutral-500 dark:text-neutral-400"
                     width={80}
                   />
-                  <Tooltip 
+                  <Tooltip
                     cursor={{ fill: 'transparent' }}
-                    contentStyle={{ 
-                      backgroundColor: 'rgba(255, 255, 255, 0.9)', 
-                      border: 'none', 
+                    contentStyle={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                      border: 'none',
                       borderRadius: '12px',
                       fontSize: '11px',
                       fontWeight: 'bold'
                     }}
                   />
-                  <Bar 
-                    dataKey="quantite" 
-                    fill="#3B82F6" 
-                    radius={[0, 4, 4, 0]} 
+                  <Bar
+                    dataKey="quantite"
+                    fill="#3B82F6"
+                    radius={[0, 4, 4, 0]}
                     barSize={12}
                   />
                 </BarChart>
@@ -802,16 +878,16 @@ export function DashboardScreen() {
                         dataKey="montant_total"
                       >
                         {paymentModes.map((_: any, index: number) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={[ '#3B82F6', '#10B981', '#F59E0B', '#EF4444' ][index % 4]} 
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={[ '#3B82F6', '#10B981', '#F59E0B', '#EF4444' ][index % 4]}
                           />
                         ))}
                       </Pie>
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'rgba(255, 255, 255, 0.9)', 
-                          border: 'none', 
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                          border: 'none',
                           borderRadius: '12px',
                           fontSize: '11px',
                           fontWeight: 'bold'
@@ -858,10 +934,10 @@ export function DashboardScreen() {
             {pendingCommandes?.map((commande) => (
                  <div key={commande.id} className="group bg-white dark:bg-dark-card/50 dark:backdrop-blur-md rounded-xl p-3.5 border border-neutral-200 dark:border-white/5 shadow-sm relative overflow-hidden transition-all hover:translate-y-[-2px] hover:shadow-md">
                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-neutral-400 dark:bg-white/10"></div>
-                    
+
                     <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-3">
-                        <div 
+                        <div
                             className="bg-center bg-no-repeat bg-cover rounded-full size-10 border border-neutral-100 dark:border-white/10"
                             style={{ backgroundImage: `url("https://ui-avatars.com/api/?name=${commande.profiles?.prenom}+${commande.profiles?.nom}&background=random")` }}
                         ></div>
@@ -883,7 +959,7 @@ export function DashboardScreen() {
                     </div>
 
                     <div className="flex gap-2 pl-12">
-                      <button 
+                      <button
                         onClick={() => navigate('/transactions')}
                         className="flex-1 h-9 rounded-lg bg-primary/5 dark:bg-dark-accent/10 text-primary dark:text-dark-accent font-bold text-xs hover:bg-primary/10 dark:hover:bg-dark-accent/20 transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
                       >
@@ -893,7 +969,7 @@ export function DashboardScreen() {
                     </div>
                 </div>
             ))}
-            
+
             {(!pendingCommandes || pendingCommandes.length === 0) && !pendingLoading && (
                 <div className="text-center py-8 text-neutral-400 text-sm">
                     Aucune validation en attente pour cette période
@@ -901,6 +977,91 @@ export function DashboardScreen() {
             )}
         </div>
       </div>
+
+      {/* Pending Returns Section */}
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-primary dark:text-white text-lg font-bold leading-tight tracking-tight">Retours en attente</h3>
+            {returnsLoading && <div className="size-4 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>}
+          </div>
+          <span className="flex items-center justify-center size-6 rounded-full bg-amber-500 text-white text-xs font-bold">
+              {pendingReturns?.length || 0}
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-3">
+            {pendingReturns?.map((retour) => (
+                 <div key={retour.id} className="group bg-white dark:bg-dark-card/50 dark:backdrop-blur-md rounded-xl p-3.5 border border-neutral-200 dark:border-white/5 shadow-sm relative overflow-hidden transition-all hover:translate-y-[-2px] hover:shadow-md">
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
+
+                    <div className="flex justify-between items-start mb-3">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-amber-100 dark:bg-amber-500/20 rounded-full size-10 flex items-center justify-center">
+                          <Package className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div>
+                        <p className="text-sm font-bold text-primary dark:text-white">Retour #{retour.factures?.numero_facture}</p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">{retour.profiles?.prenom} {retour.profiles?.nom} • {retour.commandes?.numero_commande}</p>
+                        </div>
+                    </div>
+                    <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
+                        En attente
+                    </span>
+                    </div>
+
+                    <div className="pl-12 mb-4">
+                    <p className="text-sm font-medium text-primary dark:text-white mb-0.5">
+                        {retour.nom_produit} x{retour.quantite_retournee}
+                    </p>
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500">Montant: {formatMontant(retour.montant_ligne)}</p>
+                    {retour.motif && (
+                      <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1 italic">"{retour.motif}"</p>
+                    )}
+                    </div>
+
+                    <div className="flex gap-2 pl-12">
+                      <button
+                        onClick={() => validateRetour.mutate(retour.id)}
+                        disabled={validateRetour.isPending}
+                        className="flex-1 h-9 rounded-lg bg-green-500/10 text-green-600 dark:text-green-400 font-bold text-xs hover:bg-green-500/20 transition-colors flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                      >
+                        {validateRetour.isPending ? (
+                          <div className="size-3 border-2 border-green-400/20 border-t-green-400 rounded-full animate-spin"></div>
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                        Valider
+                      </button>
+                      <button
+                        onClick={() => {
+                          const motif = prompt('Motif du refus:');
+                          if (motif) {
+                            rejectRetour.mutate({ retourId: retour.id, motifRefus: motif });
+                          }
+                        }}
+                        disabled={rejectRetour.isPending}
+                        className="flex-1 h-9 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 font-bold text-xs hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                      >
+                        {rejectRetour.isPending ? (
+                          <div className="size-3 border-2 border-red-400/20 border-t-red-400 rounded-full animate-spin"></div>
+                        ) : (
+                          <XCircle className="w-3.5 h-3.5" />
+                        )}
+                        Refuser
+                      </button>
+                    </div>
+                </div>
+            ))}
+
+            {(!pendingReturns || pendingReturns.length === 0) && !returnsLoading && (
+                <div className="text-center py-8 text-neutral-400 text-sm">
+                    Aucun retour en attente de validation
+                </div>
+            )}
+        </div>
+      </div>
+
       <div className="h-6"></div> {/* Spacer */}
     </div>
   );

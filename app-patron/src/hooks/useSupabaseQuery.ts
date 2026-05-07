@@ -203,3 +203,36 @@ export function useTransactions(filters?: any) {
     (supabase) => supabase.rpc('search_transactions', { filters })
   );
 }
+
+// Hook pour récupérer les retours en attente de validation
+export function useRetoursEnAttente() {
+  return useSupabaseQuery(
+    ['retours', 'en_attente'],
+    async (supabase) => {
+      const { data, error } = await supabase
+        .from('retour_items_en_attente')
+        .select(`
+          *,
+          factures (
+            numero_facture,
+            montant_total
+          ),
+          commandes (
+            numero_commande,
+            tables (numero),
+            profiles (nom, prenom)
+          ),
+          profiles (nom, prenom)
+        `)
+        .is('date_validation', null)
+        .order('date_demande', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching pending returns:', error);
+        return { data: [], error };
+      }
+
+      return { data: data || [], error: null };
+    }
+  );
+}

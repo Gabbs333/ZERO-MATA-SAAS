@@ -12,6 +12,7 @@ export interface Etablissement {
   actif: boolean;
   dernier_paiement_date: string | null;
   dernier_paiement_confirme_par: string | null;
+  cout_moyen_pourcentage?: number | null; // 0-100, pourcentage du prix de vente = coût
   date_creation: string;
   date_modification: string;
 }
@@ -41,10 +42,12 @@ export interface Produit {
   categorie: 'boisson' | 'nourriture' | 'autre';
   prix_vente: number;
   prix_achat?: number;
+  cout_moyen_pourcentage?: number | null; // Override individuel du pourcentage
   actif: boolean;
   etablissement_id: string;
   date_creation: string;
   date_modification?: string;
+  gestion_stock?: boolean; // true = suivi de stock actif, false = pas de stock (nourriture)
 }
 
 export interface Stock {
@@ -107,7 +110,7 @@ export interface MouvementStock {
   produit_id: string;
   quantite: number;
   type: 'entree' | 'sortie';
-  type_reference: 'commande' | 'ravitaillement' | 'ajustement';
+  type_reference: 'commande' | 'ravitaillement' | 'ajustement' | 'retour' | 'echange';
   reference?: string;
   etablissement_id: string;
   date_creation: string;
@@ -196,4 +199,49 @@ export interface EncaissementsByMode {
   mode_paiement: string;
   montant_total: number;
   nombre_transactions: number;
+}
+
+// Types pour les échanges
+export interface Echange {
+  id: string;
+  numero_echange: string;
+  facture_id: string;
+  commande_id: string;
+  montant_retourne: number;
+  montant_ajoute: number;
+  difference_montant: number;
+  motif: string | null;
+  utilisateur_id: string;
+  date_echange: string;
+  etablissement_id: string;
+  profiles?: Profile;
+  factures?: Facture;
+  commandes?: Commande;
+}
+
+export interface EchangeItemSortant {
+  id: string;
+  echange_id: string;
+  commande_item_id: string;
+  produit_id: string;
+  nom_produit: string;
+  quantite_retournee: number;
+  prix_unitaire: number;
+  montant_ligne: number;
+}
+
+export interface EchangeItemEntrant {
+  id: string;
+  echange_id: string;
+  produit_id: string;
+  nom_produit: string;
+  quantite_ajoutee: number;
+  prix_unitaire: number;
+  montant_ligne: number;
+  nouveau_commande_item_id: string | null;
+}
+
+export interface EchangeWithDetails extends Echange {
+  echange_items_sortants: EchangeItemSortant[];
+  echange_items_entrants: EchangeItemEntrant[];
 }

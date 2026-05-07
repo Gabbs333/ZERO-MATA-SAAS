@@ -11,6 +11,7 @@ import FacturesScreen from './screens/FacturesScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import StockScreen from './screens/StockScreen';
 import { RetoursScreen } from './screens/RetoursScreen';
+import { EchangesScreen } from './screens/EchangesScreen';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,7 +56,7 @@ function App() {
       // Seulement si on est en ligne
       if (navigator.onLine && document.visibilityState === 'visible') {
         console.log('App active and online, verifying state...');
-        
+
         // Petit délai pour laisser la connexion se stabiliser
         setTimeout(() => {
           supabase.auth.getSession().then(({ data: { session: currentSession }, error }) => {
@@ -117,6 +118,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <StockScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/echanges"
+            element={
+              <ProtectedRoute>
+                <EchangesScreen />
               </ProtectedRoute>
             }
           />

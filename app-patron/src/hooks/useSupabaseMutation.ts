@@ -199,7 +199,7 @@ export function useGenerateExport(
 ) {
   return useMutation<any, Error, GenerateExportParams>({
     mutationFn: async (params) => {
-      const functionName = 
+      const functionName =
         params.type === 'ventes' ? 'generate-ventes-csv' :
         params.type === 'stock' ? 'generate-stock-csv' :
         'generate-rapport-pdf';
@@ -210,6 +210,55 @@ export function useGenerateExport(
 
       if (error) throw error;
       return data;
+    },
+    ...options,
+  });
+}
+
+// Hook pour valider un retour
+export function useValidateRetour(
+  options?: Omit<UseMutationOptions<any, Error, string>, 'mutationFn'>
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<any, Error, string>({
+    mutationFn: async (factureId: string) => {
+      const { data, error } = await supabase.rpc('valider_retour_en_attente', {
+        p_facture_id: factureId
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['retours'] });
+      queryClient.invalidateQueries({ queryKey: ['retours_en_attente'] });
+      queryClient.invalidateQueries({ queryKey: ['stocks'] });
+      queryClient.invalidateQueries({ queryKey: ['mouvements_stock'] });
+      queryClient.invalidateQueries({ queryKey: ['factures'] });
+    },
+    ...options,
+  });
+}
+
+// Hook pour refuser un retour
+export function useRejectRetour(
+  options?: Omit<UseMutationOptions<any, Error, string>, 'mutationFn'>
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<any, Error, string>({
+    mutationFn: async (factureId: string) => {
+      const { data, error } = await supabase.rpc('annuler_retour_en_attente', {
+        p_facture_id: factureId
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['retours'] });
+      queryClient.invalidateQueries({ queryKey: ['retours_en_attente'] });
     },
     ...options,
   });

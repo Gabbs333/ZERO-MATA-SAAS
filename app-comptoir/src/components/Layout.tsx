@@ -6,16 +6,17 @@ import logoLight from '../assets/logo-light.png';
 import logoDark from '../assets/logo-dark.png';
 import { useTheme } from '../hooks/useTheme';
 import logoIcon from '../assets/icon.png';
-import { 
-  Menu, 
-  X, 
-  CheckCircle, 
-  Receipt, 
-  Package, 
-  LogOut, 
+import {
+  Menu,
+  X,
+  CheckCircle,
+  Receipt,
+  Package,
+  LogOut,
   Store,
   Clock,
-  ArrowLeftCircle
+  ArrowLeftCircle,
+  ArrowRightLeft
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -29,7 +30,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const { profile, signOut, loading, error } = useAuthStore();
   const { theme } = useTheme();
-  
+
   // Safe access to establishment name with array check (defensive programming)
   const getEtablissementName = () => {
     if (!profile?.etablissement) return null;
@@ -41,7 +42,7 @@ export default function Layout({ children }: LayoutProps) {
   };
 
   const etablissementName = getEtablissementName();
-  
+
   // Determine display status
   let displayName = 'Non disponible';
   if (loading) {
@@ -63,6 +64,7 @@ export default function Layout({ children }: LayoutProps) {
     { text: 'Factures', icon: Receipt, path: '/factures' },
     { text: 'Historique', icon: Clock, path: '/historique' },
     { text: 'Stock', icon: Package, path: '/stock' },
+    { text: 'Échanges', icon: ArrowRightLeft, path: '/echanges' },
     { text: 'Retours', icon: ArrowLeftCircle, path: '/retours' },
   ];
 
@@ -81,14 +83,14 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Mobile Overlay */}
       {isSidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <aside 
+      <aside
         className={clsx(
           "fixed lg:static inset-y-0 left-0 z-50 w-72 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl border-r border-neutral-200/50 dark:border-white/5 transform transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none flex flex-col",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
@@ -97,15 +99,15 @@ export default function Layout({ children }: LayoutProps) {
         <div className="h-32 flex items-center justify-between px-6 border-b border-white/20 relative overflow-hidden flex-shrink-0 bg-white/80 backdrop-blur-xl">
           {/* Logo area glow */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
-          
+
           <div className="h-full w-full flex items-center justify-start relative z-10 px-2">
-            <img 
-              src={logoLight} 
-              alt="ZERO-MATA" 
-              className="w-full h-full object-contain" 
+            <img
+              src={logoLight}
+              alt="ZERO-MATA"
+              className="w-full h-full object-contain"
             />
           </div>
-          <button 
+          <button
             onClick={() => setIsSidebarOpen(false)}
             className="lg:hidden text-neutral-500 dark:text-neutral-400 hover:text-primary dark:hover:text-white transition-colors"
           >
@@ -139,8 +141,8 @@ export default function Layout({ children }: LayoutProps) {
                 onClick={() => setIsSidebarOpen(false)}
                 className={clsx(
                   "relative group flex items-center space-x-3 px-4 py-3.5 rounded-xl transition-all duration-300 w-full",
-                  isActive 
-                    ? "text-white shadow-lg shadow-primary/25" 
+                  isActive
+                    ? "text-white shadow-lg shadow-primary/25"
                     : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
                 )}
               >
@@ -148,7 +150,7 @@ export default function Layout({ children }: LayoutProps) {
                 {isActive && (
                   <div className="absolute inset-0 bg-gradient-to-r from-primary to-semantic-blue opacity-100 z-0 rounded-xl"></div>
                 )}
-                
+
                 {/* Hover Background (Glass) */}
                 {!isActive && (
                   <div className="absolute inset-0 bg-neutral-100 dark:bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity z-0 rounded-xl"></div>
@@ -165,7 +167,7 @@ export default function Layout({ children }: LayoutProps) {
             );
           })}
         </nav>
-        
+
         {/* Sidebar Footer / User Mini Profile */}
         <div className="p-4 border-t border-neutral-200/50 dark:border-white/5 bg-neutral-50/50 dark:bg-black/20 backdrop-blur-sm flex-shrink-0 space-y-3">
              <div className="flex items-center justify-between px-2">
@@ -215,7 +217,7 @@ export default function Layout({ children }: LayoutProps) {
               Comptoir
             </h1>
           </div>
-          
+
           {/* Desktop Establishment Branding */}
            <div className="hidden lg:flex items-center gap-3 bg-neutral-100/50 dark:bg-white/5 px-4 py-2 rounded-xl border border-neutral-200/50 dark:border-white/5 mr-auto ml-4">
               <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
