@@ -130,7 +130,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </div>
 
-        <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-2">
+        <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -237,7 +237,7 @@ export default function Layout({ children }: LayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 lg:p-8 relative">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 lg:p-8 relative custom-scrollbar">
           <div className="max-w-7xl mx-auto space-y-6 w-full">
             {children}
           </div>
