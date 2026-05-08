@@ -74,7 +74,7 @@ export default function Layout({ children }: LayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-background-light dark:bg-background-dark flex transition-colors overflow-hidden font-body">
+    <div className="h-screen bg-background-light dark:bg-background-dark flex transition-colors overflow-hidden font-body">
       {/* Background ambient glow */}
       <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0 overflow-hidden">
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px] opacity-50 dark:opacity-20 animate-pulse-slow"></div>
@@ -92,7 +92,7 @@ export default function Layout({ children }: LayoutProps) {
       {/* Sidebar */}
       <aside
         className={clsx(
-          "fixed lg:static inset-y-0 left-0 z-50 w-72 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl border-r border-neutral-200/50 dark:border-white/5 transform transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none flex flex-col",
+          "fixed lg:sticky lg:top-0 lg:h-screen inset-y-0 left-0 z-50 w-72 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl border-r border-neutral-200/50 dark:border-white/5 transform transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none flex flex-col flex-shrink-0",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
@@ -130,7 +130,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2">
+        <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-2">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -202,7 +202,7 @@ export default function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-screen relative z-10 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 relative z-10">
         {/* Header */}
         <header className="h-20 bg-white/80 dark:bg-neutral-900/60 backdrop-blur-xl border-b border-neutral-200/50 dark:border-white/5 flex items-center justify-between px-4 lg:px-8 transition-colors sticky top-0 z-40">
           <button
