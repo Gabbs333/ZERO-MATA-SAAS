@@ -72,6 +72,16 @@
     scrollbar-width: none;
 }
 
+/* Visible scrollbar for both modes */
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #a3a3a3; border-radius: 9999px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #737373; }
+.dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.4); }
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.6); }
+.custom-scrollbar { scrollbar-width: thin; scrollbar-color: #a3a3a3 transparent; }
+.dark .custom-scrollbar { scrollbar-color: rgba(255,255,255,0.4) transparent; }
+
 @keyframes draw {
     to { stroke-dashoffset: 0; }
 }
