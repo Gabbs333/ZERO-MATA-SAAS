@@ -137,6 +137,10 @@ $$;
 
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "staff_read_establishment_clients" ON clients;
+DROP POLICY IF EXISTS "staff_insert_clients" ON clients;
+DROP POLICY IF EXISTS "staff_update_clients" ON clients;
+
 CREATE POLICY "staff_read_establishment_clients"
   ON clients FOR SELECT
   TO authenticated
