@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -72,6 +72,7 @@ type ViewMode = 'list' | 'detail';
 
 export function ClientsScreen() {
   const profile = useAuthStore((s) => s.profile);
+  const etablissement = profile?.etablissement;
   const etablissementId = profile?.etablissement_id;
 
   // ── View state ─────────────────────────────────────────────────────────
@@ -98,6 +99,23 @@ export function ClientsScreen() {
   const [noteJournaliere, setNoteJournaliere] = useState<NoteJournaliere | null>(null);
   const [isLoadingNote, setIsLoadingNote] = useState(false);
   const [noteError, setNoteError] = useState('');
+
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const handlePrintNote = useCallback(() => {
+    const content = printRef.current;
+    if (!content) return;
+    const win = window.open('', '_blank', 'width=400,height=600');
+    if (!win) return;
+    win.document.write(`
+      <html><head><title>Note client</title>
+      <style>body{font-family:monospace;font-size:12px;line-height:1.4;padding:20px;max-width:80mm;margin:0 auto}
+      h1{font-size:18px;text-align:center}.dashed{border-top:1px dashed #000;margin:10px 0}
+      .flex{display:flex;justify-content:space-between}.bold{font-weight:bold}.mb{margin-bottom:8px}
+      </style></head><body>${content.innerHTML}</body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 300);
+  }, []);
 
   // ── Credit payment modal state ────────────────────────────────────────
   const [showCreditPaymentModal, setShowCreditPaymentModal] = useState(false);
@@ -867,6 +885,14 @@ export function ClientsScreen() {
                 )}
                 Voir la note du jour
               </button>
+              {noteJournaliere && (
+                <button
+                  onClick={handlePrintNote}
+                  className="px-4 py-2 bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400 rounded-lg text-sm font-bold hover:bg-green-200 dark:hover:bg-green-500/30 transition-colors flex items-center gap-2"
+                >
+                  🖨️ Imprimer
+                </button>
+              )}
             </div>
           </div>
 
@@ -964,6 +990,42 @@ export function ClientsScreen() {
               Cliquez sur "Voir la note du jour" pour afficher la note consolidée des commandes
               d'aujourd'hui pour ce client.
             </p>
+          )}
+        </div>
+
+        {/* Printable note (hidden on screen) */}
+        <div ref={printRef} className="hidden">
+          {noteJournaliere && (
+            <div style={{ fontFamily: 'monospace', fontSize: '12px', maxWidth: '80mm' }}>
+              <h1 style={{ textAlign: 'center', fontSize: '18px', fontWeight: 'bold' }}>
+                {etablissement?.nom || 'Établissement'}
+              </h1>
+              <p style={{ textAlign: 'center' }}>Note client</p>
+              <div className="dashed" />
+              <p><strong>Client :</strong> {[selectedClient?.prenom, selectedClient?.nom].filter(Boolean).join(' ') || '—'}</p>
+              <p><strong>Date :</strong> {format(new Date(), 'dd/MM/yyyy', { locale: fr })}</p>
+              <div className="dashed" />
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr style={{ borderBottom: '1px solid #000' }}>
+                  <th style={{ textAlign: 'left' }}>Article</th>
+                  <th style={{ textAlign: 'center' }}>Qté</th>
+                  <th style={{ textAlign: 'right' }}>Total</th>
+                </tr></thead>
+                <tbody>
+                  {noteJournaliere.lignes?.map((ligne: NoteLigne, idx: number) => (
+                    <tr key={idx}>
+                      <td>{ligne.nom_produit}</td>
+                      <td style={{ textAlign: 'center' }}>{ligne.quantite}</td>
+                      <td style={{ textAlign: 'right' }}>{formatPrice(ligne.montant_ligne)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="dashed" />
+              <p className="flex bold"><span>TOTAL</span><span>{formatPrice(noteJournaliere.total_commande)}</span></p>
+              <p className="flex"><span>Payé</span><span>{formatPrice(noteJournaliere.total_paye)}</span></p>
+              <p className="flex bold"><span>Reste à payer</span><span>{formatPrice(noteJournaliere.solde_restant)}</span></p>
+            </div>
           )}
         </div>
 
