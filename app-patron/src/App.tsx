@@ -18,6 +18,7 @@ import { RetoursScreen } from './screens/RetoursScreen';
 import { RapportsScreen } from './screens/RapportsScreen';
 import { UtilisateursScreen } from './screens/UtilisateursScreen';
 import { TransactionsScreen } from './screens/TransactionsScreen';
+import { ClientsScreen } from './screens/ClientsScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { UserProfileScreen } from './screens/UserProfileScreen';
 import { SystemActivityScreen } from './screens/SystemActivityScreen';
@@ -199,6 +200,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <TransactionsScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/clients"
+            element={
+              <ProtectedRoute>
+                <ClientsScreen />
               </ProtectedRoute>
             }
           />

@@ -3,13 +3,13 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
-import { 
-  LayoutDashboard, 
-  Package, 
-  Users, 
-  Settings, 
-  Banknote, 
-  Truck, 
+import {
+  LayoutDashboard,
+  Package,
+  Users,
+  Settings,
+  Banknote,
+  Truck,
   ShoppingCart,
   LogOut,
   ChevronLeft,
@@ -34,7 +34,7 @@ export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const { profile, signOut } = useAuthStore();
   const { theme } = useTheme();
-  
+
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebar-collapsed');
     return saved === 'true';
@@ -105,10 +105,11 @@ export function Layout({ children }: LayoutProps) {
       { text: 'Products', icon: ShoppingCart, path: '/produits', roles: ['gerant', 'patron'] },
       { text: 'Tables', icon: LayoutDashboard, path: '/tables', roles: ['gerant', 'patron'] },
       { text: 'Retours', icon: ArrowLeftCircle, path: '/retours', roles: ['gerant', 'patron'] },
+      { text: 'Clients', icon: Users, path: '/clients', roles: ['patron', 'gerant', 'comptoir'] },
       { text: 'Performance', icon: Banknote, path: '/profits', roles: ['patron'] },
   ];
 
-  const filteredMenuItems = menuItems.filter(item => 
+  const filteredMenuItems = menuItems.filter(item =>
     item.roles.includes(profile?.role || '')
   );
 
@@ -124,14 +125,14 @@ export function Layout({ children }: LayoutProps) {
       <div className="sticky top-0 z-40 bg-white/80 dark:bg-dark-bg/80 backdrop-blur-xl border-b border-neutral-200 dark:border-white/5 transition-colors duration-300">
         <div className="flex items-center justify-between p-4 pb-3">
           <div className="flex items-center gap-3">
-            <button 
+            <button
               onClick={() => setIsMobileMenuOpen(true)}
               className="md:hidden p-2 rounded-xl bg-neutral-100 dark:bg-white/5 text-neutral-500 dark:text-neutral-400"
             >
               <Menu className="w-6 h-6" />
             </button>
             <div className="relative group cursor-pointer" onClick={() => navigate('/profil')}>
-              <div 
+              <div
                 className="bg-center bg-no-repeat bg-cover rounded-2xl size-10 border border-neutral-200 dark:border-white/10 shadow-sm group-hover:scale-105 transition-transform"
                 style={{ backgroundImage: `url("https://ui-avatars.com/api/?name=${profile?.prenom}+${profile?.nom}&background=random")` }}
               ></div>
@@ -146,12 +147,12 @@ export function Layout({ children }: LayoutProps) {
               </h1>
             </div>
           </div>
-          
+
           <div className="flex gap-2 items-center">
              <div className="hidden sm:block">
                <ThemeToggle />
              </div>
-             <button 
+             <button
                 onClick={handleLogout}
                 className="flex items-center justify-center size-10 rounded-2xl bg-white dark:bg-white/5 border border-neutral-200 dark:border-white/5 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-neutral-400 hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400"
                 title="Déconnexion"
@@ -168,28 +169,28 @@ export function Layout({ children }: LayoutProps) {
           <div className={`p-6 border-b border-white/20 relative flex items-center bg-white/80 backdrop-blur-xl ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}>
              <div className={`flex items-center gap-3 w-full ${isCollapsed ? 'hidden' : 'flex'}`}>
                 <div className="h-32 w-full flex items-center justify-start px-2">
-                   <img 
-                     src={logoLight} 
-                     alt="ZERO-MATA" 
-                     className="w-full h-full object-contain" 
+                   <img
+                     src={logoLight}
+                     alt="ZERO-MATA"
+                     className="w-full h-full object-contain"
                    />
                 </div>
              </div>
-             
+
              {isCollapsed && (
                <div className="size-10 flex items-center justify-center bg-white rounded-xl shadow-sm p-1.5 border border-neutral-100 dark:border-white/5">
                  <img src={logoIcon} alt="ZM" className="w-full h-full object-contain" />
                </div>
              )}
 
-             <button 
+             <button
                 onClick={() => setIsCollapsed(!isCollapsed)}
                 className={`absolute -right-3 top-1/2 -translate-y-1/2 size-6 rounded-full bg-white dark:bg-dark-card border border-neutral-200 dark:border-white/10 flex items-center justify-center text-neutral-400 dark:text-neutral-500 hover:text-primary dark:hover:text-dark-accent transition-colors shadow-sm z-50`}
              >
                 {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
              </button>
           </div>
-          
+
           <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1.5 custom-scrollbar">
               {!isCollapsed && <p className="px-4 text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-[0.2em] mb-3 mt-2">Principal</p>}
               {filteredMenuItems.map((item) => (
@@ -198,8 +199,8 @@ export function Layout({ children }: LayoutProps) {
                     onClick={() => navigate(item.path)}
                     title={isCollapsed ? item.text : ''}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${
-                        isActive(item.path) 
-                        ? 'bg-primary text-white dark:bg-dark-accent dark:text-white shadow-xl shadow-primary/20 dark:shadow-dark-accent/20 scale-[1.02]' 
+                        isActive(item.path)
+                        ? 'bg-primary text-white dark:bg-dark-accent dark:text-white shadow-xl shadow-primary/20 dark:shadow-dark-accent/20 scale-[1.02]'
                         : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/5 hover:text-primary dark:hover:text-white'
                     } ${isCollapsed ? 'justify-center px-0 h-12 w-12 mx-auto' : ''}`}
                   >
@@ -215,8 +216,8 @@ export function Layout({ children }: LayoutProps) {
                     onClick={() => navigate(item.path)}
                     title={isCollapsed ? item.text : ''}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${
-                        isActive(item.path) 
-                        ? 'bg-primary text-white dark:bg-dark-accent dark:text-white shadow-xl shadow-primary/20 dark:shadow-dark-accent/20 scale-[1.02]' 
+                        isActive(item.path)
+                        ? 'bg-primary text-white dark:bg-dark-accent dark:text-white shadow-xl shadow-primary/20 dark:shadow-dark-accent/20 scale-[1.02]'
                         : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/5 hover:text-primary dark:hover:text-white'
                     } ${isCollapsed ? 'justify-center px-0 h-12 w-12 mx-auto' : ''}`}
                   >
@@ -242,7 +243,7 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Mobile Sidebar Drawer Overlay */}
       {isMobileMenuOpen && (
-        <div 
+        <div
           className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] animate-in fade-in duration-300"
           onClick={() => setIsMobileMenuOpen(false)}
         />
@@ -252,20 +253,20 @@ export function Layout({ children }: LayoutProps) {
       <div className={`md:hidden fixed top-0 left-0 bottom-0 w-72 bg-white dark:bg-dark-card z-[70] shadow-2xl transition-transform duration-300 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="p-6 border-b border-white/20 bg-white/80 backdrop-blur-xl flex items-center justify-between">
              <div className="flex items-center gap-3 flex-1">
-                <img 
-                  src={logoLight} 
-                  alt="ZERO-MATA" 
-                  className="w-full h-auto object-contain" 
+                <img
+                  src={logoLight}
+                  alt="ZERO-MATA"
+                  className="w-full h-auto object-contain"
                 />
              </div>
-             <button 
+             <button
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="p-2 rounded-xl bg-neutral-100 text-neutral-500"
              >
                 <X className="w-5 h-5" />
              </button>
           </div>
-          
+
           <nav className="flex-1 overflow-y-auto py-6 px-4 space-y-1.5 custom-scrollbar">
               <p className="px-3 text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-[0.2em] mb-3 mt-2">Principal</p>
               {filteredMenuItems.map((item) => (
@@ -273,8 +274,8 @@ export function Layout({ children }: LayoutProps) {
                     key={item.path}
                     onClick={() => navigate(item.path)}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${
-                        isActive(item.path) 
-                        ? 'bg-primary text-white dark:bg-dark-accent dark:text-white shadow-xl shadow-primary/20 dark:shadow-dark-accent/20 scale-[1.02]' 
+                        isActive(item.path)
+                        ? 'bg-primary text-white dark:bg-dark-accent dark:text-white shadow-xl shadow-primary/20 dark:shadow-dark-accent/20 scale-[1.02]'
                         : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/5 hover:text-primary dark:hover:text-white'
                     }`}
                   >
@@ -289,8 +290,8 @@ export function Layout({ children }: LayoutProps) {
                     key={item.path}
                     onClick={() => navigate(item.path)}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${
-                        isActive(item.path) 
-                        ? 'bg-primary text-white dark:bg-dark-accent dark:text-white shadow-xl shadow-primary/20 dark:shadow-dark-accent/20 scale-[1.02]' 
+                        isActive(item.path)
+                        ? 'bg-primary text-white dark:bg-dark-accent dark:text-white shadow-xl shadow-primary/20 dark:shadow-dark-accent/20 scale-[1.02]'
                         : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/5 hover:text-primary dark:hover:text-white'
                     }`}
                   >
@@ -305,7 +306,7 @@ export function Layout({ children }: LayoutProps) {
                 <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">Mode Sombre</span>
                 <ThemeToggle />
              </div>
-             <button 
+             <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
              >
@@ -316,7 +317,7 @@ export function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Mobile Floating Menu Button (Shows when bottom nav is hidden) */}
-      <button 
+      <button
         onClick={() => setIsMobileMenuOpen(true)}
         className={`md:hidden fixed bottom-6 right-6 size-12 rounded-full bg-primary dark:bg-dark-accent text-white dark:text-primary shadow-xl z-[45] flex items-center justify-center transition-all duration-500 ${!showMobileNav ? 'scale-100 opacity-100 translate-y-0' : 'scale-0 opacity-0 translate-y-10 pointer-events-none'}`}
       >
@@ -352,7 +353,7 @@ export function Layout({ children }: LayoutProps) {
           {/* Main Navigation Bar */}
           <div className="flex justify-around items-center pt-2 border-t border-neutral-100 dark:border-white/5">
             {filteredMenuItems.map((item) => (
-              <button 
+              <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
                 className="flex flex-col items-center gap-1.5 py-1 px-3 min-w-[64px] transition-all active:scale-90"
