@@ -259,6 +259,8 @@ export interface Client {
   email: string | null;
   notes: string | null;
   actif: boolean;
+  credit_active: boolean;
+  credit_limit: number;
   etablissement_id: string;
   date_creation: string;
   date_modification: string;

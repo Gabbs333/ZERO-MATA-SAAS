@@ -50,7 +50,7 @@ export default function FacturesScreen() {
   const [showEncaissementDialog, setShowEncaissementDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [montant, setMontant] = useState('');
-  const [modePaiement, setModePaiement] = useState<'especes' | 'carte' | 'mobile_money' | 'cheque'>('especes');
+  const [modePaiement, setModePaiement] = useState<'especes' | 'carte' | 'mobile_money' | 'cheque' | 'credit'>('especes');
   const [reference, setReference] = useState('');
   const [error, setError] = useState('');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
@@ -153,9 +153,41 @@ export default function FacturesScreen() {
     setShowDetailsDialog(true);
   };
 
-  const handleCreateEncaissement = () => {
+  const handleCreateEncaissement = async () => {
     if (!selectedFacture) return;
 
+    // --- Mode crédit : on marque la facture comme vente à crédit ---
+    if (modePaiement === 'credit') {
+      const montantRestant = selectedFacture.montant_total - selectedFacture.montant_paye;
+      const clientName = selectedFacture.commandes.clients
+        ? `${selectedFacture.commandes.clients.prenom} ${selectedFacture.commandes.clients.nom}`
+        : 'Client';
+
+      const { error: updateError } = await supabase
+        .from('factures')
+        .update({ credit_sur: true })
+        .eq('id', selectedFacture.id);
+
+      if (updateError) {
+        setError(updateError.message || 'Erreur lors de la mise à crédit');
+        return;
+      }
+
+      setShowEncaissementDialog(false);
+      setSelectedFacture(null);
+      setMontant('');
+      setReference('');
+      setError('');
+
+      // Rafraîchir les données
+      queryClient.invalidateQueries({ queryKey: ['factures'] });
+      queryClient.invalidateQueries({ queryKey: ['client_stats'] });
+
+      alert(`Montant de ${formatPrice(montantRestant)} mis à crédit pour ${clientName}`);
+      return;
+    }
+
+    // --- Mode normal : encaissement classique ---
     const montantNum = parseFloat(montant);
     if (isNaN(montantNum) || montantNum <= 0) {
       setError('Montant invalide');
@@ -181,6 +213,7 @@ export default function FacturesScreen() {
           setSelectedFacture(null);
           setMontant('');
           setReference('');
+          setError('');
         },
         onError: (err: any) => {
           setError(err.message || 'Erreur lors de l\'encaissement');
@@ -816,6 +849,15 @@ export default function FacturesScreen() {
                     <span className="text-sm text-neutral-500 dark:text-neutral-400">Commande</span>
                     <span className="font-bold text-primary dark:text-white">{selectedFacture.commandes.numero_commande}</span>
                   </div>
+                  {selectedFacture.commandes.clients && (
+                    <div className="flex justify-between mb-2">
+                      <span className="text-sm text-neutral-500 dark:text-neutral-400">Client</span>
+                      <span className="font-bold text-primary dark:text-white flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5" />
+                        {selectedFacture.commandes.clients.prenom} {selectedFacture.commandes.clients.nom}
+                      </span>
+                    </div>
+                  )}
                   <div className="h-px bg-neutral-200 dark:bg-white/10 my-2" />
                   <div className="flex justify-between items-end">
                     <span className="text-sm font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Reste à payer</span>
@@ -825,19 +867,21 @@ export default function FacturesScreen() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 ml-1">Montant à encaisser</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={montant}
-                      onChange={(e) => setMontant(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary outline-none transition-all font-bold text-lg"
-                      placeholder="0"
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 font-bold text-sm">FCFA</span>
+                {modePaiement !== 'credit' && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 ml-1">Montant à encaisser</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={montant}
+                        onChange={(e) => setMontant(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary outline-none transition-all font-bold text-lg"
+                        placeholder="0"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 font-bold text-sm">FCFA</span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 ml-1">Mode de paiement</label>
@@ -847,6 +891,7 @@ export default function FacturesScreen() {
                       { id: 'carte', label: 'Carte', icon: CreditCard },
                       { id: 'mobile_money', label: 'Mobile Money', icon: Smartphone },
                       { id: 'cheque', label: 'Chèque', icon: ReceiptIcon },
+                      { id: 'credit', label: 'À crédit', icon: CreditCard },
                     ].map((mode) => (
                       <button
                         key={mode.id}
@@ -865,16 +910,18 @@ export default function FacturesScreen() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 ml-1">Référence (Optionnel)</label>
-                  <input
-                    type="text"
-                    value={reference}
-                    onChange={(e) => setReference(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary outline-none transition-all text-sm"
-                    placeholder="Numéro de transaction, chèque..."
-                  />
-                </div>
+                {modePaiement !== 'credit' && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 ml-1">Référence (Optionnel)</label>
+                    <input
+                      type="text"
+                      value={reference}
+                      onChange={(e) => setReference(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary outline-none transition-all text-sm"
+                      placeholder="Numéro de transaction, chèque..."
+                    />
+                  </div>
+                )}
 
                 {error && (
                   <div className="p-3 bg-semantic-red/10 border border-semantic-red/20 rounded-xl text-semantic-red text-sm font-bold flex items-center gap-2">
@@ -886,17 +933,37 @@ export default function FacturesScreen() {
             </div>
 
             <div className="p-6 border-t border-neutral-200 dark:border-white/5 bg-neutral-50/50 dark:bg-white/5 flex-shrink-0">
+              {modePaiement === 'credit' && (
+                <div className="mb-3 p-3 bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20 rounded-xl text-purple-700 dark:text-purple-400 text-sm flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 flex-shrink-0" />
+                  <span>Le montant restant de <strong>{formatPrice(selectedFacture.montant_total - selectedFacture.montant_paye)}</strong> sera mis à crédit pour ce client. Aucun encaissement immédiat.</span>
+                </div>
+              )}
               <button
                 onClick={handleCreateEncaissement}
                 disabled={isPending}
-                className="w-full py-3.5 bg-primary hover:bg-primary/90 text-white rounded-xl font-bold shadow-lg shadow-primary/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+                className={cn(
+                  "w-full py-3.5 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all",
+                  modePaiement === 'credit'
+                    ? "bg-purple-600 hover:bg-purple-700 shadow-purple-500/25"
+                    : "bg-primary hover:bg-primary/90 shadow-primary/25"
+                )}
               >
                 {isPending ? (
                   <Loader className="w-5 h-5 animate-spin" />
                 ) : (
                   <>
-                    <Check className="w-5 h-5" />
-                    Confirmer l'encaissement
+                    {modePaiement === 'credit' ? (
+                      <>
+                        <CreditCard className="w-5 h-5" />
+                        Mettre à crédit
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-5 h-5" />
+                        Confirmer l'encaissement
+                      </>
+                    )}
                   </>
                 )}
               </button>
