@@ -344,7 +344,7 @@ export function ClientsScreen() {
         p_montant: amount,
         p_mode_paiement: creditPaymentMode,
         p_reference: creditPaymentReference || null,
-        p_notes: creditPaymentNotes || null
+        p_notes: creditPaymentNotes || null,
       });
       if (error) throw error;
       setShowCreditPaymentModal(false);
@@ -387,53 +387,52 @@ export function ClientsScreen() {
     const isEdit = !!editingClient;
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        {/* Backdrop */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
         <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          className="absolute inset-0"
           onClick={handleCloseModal}
         />
 
         {/* Dialog */}
-        <div className="relative bg-white dark:bg-neutral-800 rounded-2xl border border-neutral-200 dark:border-white/10 shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="relative bg-white dark:bg-dark-card/90 dark:backdrop-blur-xl rounded-2xl w-full max-w-lg shadow-2xl border border-neutral-200 dark:border-white/5 overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-white/10">
-            <h2 className="text-lg font-bold text-neutral-900 dark:text-white">
+          <div className="p-4 md:p-6 border-b border-neutral-100 dark:border-white/5 flex justify-between items-center">
+            <h2 className="text-xl font-bold text-primary dark:text-white font-display">
               {isEdit ? 'Modifier le client' : 'Nouveau client'}
             </h2>
             <button
               onClick={handleCloseModal}
-              className="p-1.5 hover:bg-neutral-100 dark:hover:bg-white/10 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-neutral-100 dark:hover:bg-white/5 rounded-lg transition-colors"
             >
-              <X className="w-5 h-5 text-neutral-500" />
+              <X className="w-5 h-5 text-neutral-400" />
             </button>
           </div>
 
           {/* Body */}
-          <div className="p-5 space-y-4">
+          <div className="p-4 md:p-6 space-y-5">
             {formError && (
-              <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg text-sm text-red-700 dark:text-red-400">
+              <div className="bg-semantic-red/10 border border-semantic-red/20 rounded-lg text-semantic-red text-sm p-3">
                 {formError}
               </div>
             )}
 
             {/* Nom (required) */}
             <div>
-              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
-                Nom <span className="text-red-500">*</span>
+              <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
+                Nom <span className="text-semantic-red">*</span>
               </label>
               <input
                 type="text"
                 value={formNom}
                 onChange={(e) => setFormNom(e.target.value)}
                 placeholder="Nom du client"
-                className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                className="w-full px-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none"
               />
             </div>
 
             {/* Prénom */}
             <div>
-              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+              <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
                 Prénom
               </label>
               <input
@@ -441,13 +440,13 @@ export function ClientsScreen() {
                 value={formPrenom}
                 onChange={(e) => setFormPrenom(e.target.value)}
                 placeholder="Prénom du client"
-                className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                className="w-full px-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none"
               />
             </div>
 
             {/* Téléphone */}
             <div>
-              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+              <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
                 Téléphone
               </label>
               <div className="relative">
@@ -457,14 +456,14 @@ export function ClientsScreen() {
                   value={formTelephone}
                   onChange={(e) => setFormTelephone(e.target.value)}
                   placeholder="+225 XX XX XX XX XX"
-                  className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                  className="w-full pl-10 pr-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none"
                 />
               </div>
             </div>
 
             {/* Email */}
             <div>
-              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+              <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
                 Email
               </label>
               <div className="relative">
@@ -474,14 +473,14 @@ export function ClientsScreen() {
                   value={formEmail}
                   onChange={(e) => setFormEmail(e.target.value)}
                   placeholder="client@email.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                  className="w-full pl-10 pr-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none"
                 />
               </div>
             </div>
 
             {/* Notes */}
             <div>
-              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+              <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
                 Notes
               </label>
               <textarea
@@ -489,7 +488,7 @@ export function ClientsScreen() {
                 onChange={(e) => setFormNotes(e.target.value)}
                 placeholder="Notes ou remarques…"
                 rows={3}
-                className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none resize-none"
+                className="w-full px-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none resize-none"
               />
             </div>
 
@@ -500,7 +499,7 @@ export function ClientsScreen() {
                   <Wallet className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-neutral-900 dark:text-white">
+                  <p className="text-sm font-bold text-primary dark:text-white">
                     Activer le crédit
                   </p>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -528,7 +527,7 @@ export function ClientsScreen() {
             {/* Crédit limit */}
             {formCreditActive && (
               <div>
-                <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+                <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
                   Plafond de crédit (XAF)
                 </label>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
@@ -542,7 +541,7 @@ export function ClientsScreen() {
                     value={formCreditLimit || ''}
                     onChange={(e) => setFormCreditLimit(Number(e.target.value))}
                     placeholder="Montant maximum du crédit"
-                    className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                    className="w-full pl-10 pr-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none"
                   />
                 </div>
               </div>
@@ -550,25 +549,27 @@ export function ClientsScreen() {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center gap-3 p-5 border-t border-neutral-200 dark:border-white/10">
-            <button
-              onClick={handleCloseModal}
-              className="flex-1 py-2.5 px-4 bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-neutral-400 rounded-xl font-bold hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={handleSaveClient}
-              disabled={isSaving || !formNom.trim()}
-              className="flex-1 py-2.5 px-4 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isSaving ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-              ) : (
-                <Plus className="w-4 h-4" />
-              )}
-              {isEdit ? 'Modifier' : 'Créer'}
-            </button>
+          <div className="p-4 md:p-6 border-t border-neutral-100 dark:border-white/5">
+            <div className="flex gap-3">
+              <button
+                onClick={handleCloseModal}
+                className="flex-1 px-4 py-3 rounded-xl font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-dark-card/40 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSaveClient}
+                disabled={isSaving || !formNom.trim()}
+                className="flex-1 px-4 py-3 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSaving ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                {isEdit ? 'Modifier' : 'Créer'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -582,10 +583,9 @@ export function ClientsScreen() {
     const displayName = [selectedClient.prenom, selectedClient.nom].filter(Boolean).join(' ') || 'Client';
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        {/* Backdrop */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
         <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          className="absolute inset-0"
           onClick={() => {
             setShowCreditPaymentModal(false);
             setCreditPaymentError('');
@@ -593,10 +593,10 @@ export function ClientsScreen() {
         />
 
         {/* Dialog */}
-        <div className="relative bg-white dark:bg-neutral-800 rounded-2xl border border-neutral-200 dark:border-white/10 shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="relative bg-white dark:bg-dark-card/90 dark:backdrop-blur-xl rounded-2xl w-full max-w-lg shadow-2xl border border-neutral-200 dark:border-white/5 overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-white/10">
-            <h2 className="text-lg font-bold text-neutral-900 dark:text-white">
+          <div className="p-4 md:p-6 border-b border-neutral-100 dark:border-white/5 flex justify-between items-center">
+            <h2 className="text-xl font-bold text-primary dark:text-white font-display">
               Paiement crédit - {displayName}
             </h2>
             <button
@@ -604,24 +604,24 @@ export function ClientsScreen() {
                 setShowCreditPaymentModal(false);
                 setCreditPaymentError('');
               }}
-              className="p-1.5 hover:bg-neutral-100 dark:hover:bg-white/10 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-neutral-100 dark:hover:bg-white/5 rounded-lg transition-colors"
             >
-              <X className="w-5 h-5 text-neutral-500" />
+              <X className="w-5 h-5 text-neutral-400" />
             </button>
           </div>
 
           {/* Body */}
-          <div className="p-5 space-y-4">
+          <div className="p-4 md:p-6 space-y-5">
             {creditPaymentError && (
-              <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg text-sm text-red-700 dark:text-red-400">
+              <div className="bg-semantic-red/10 border border-semantic-red/20 rounded-lg text-semantic-red text-sm p-3">
                 {creditPaymentError}
               </div>
             )}
 
             {/* Montant (required) */}
             <div>
-              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
-                Montant <span className="text-red-500">*</span>
+              <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
+                Montant <span className="text-semantic-red">*</span>
               </label>
               <div className="relative">
                 <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
@@ -631,20 +631,20 @@ export function ClientsScreen() {
                   value={creditPaymentAmount}
                   onChange={(e) => setCreditPaymentAmount(e.target.value)}
                   placeholder="Montant en XAF"
-                  className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                  className="w-full pl-10 pr-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none"
                 />
               </div>
             </div>
 
             {/* Mode de paiement */}
             <div>
-              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+              <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
                 Mode de paiement
               </label>
               <select
                 value={creditPaymentMode}
                 onChange={(e) => setCreditPaymentMode(e.target.value as typeof creditPaymentMode)}
-                className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                className="px-3 py-1.5 bg-neutral-100 dark:bg-dark-card/40 border border-neutral-200 dark:border-white/10 rounded-lg text-sm font-bold text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none w-full"
               >
                 <option value="especes">Espèces</option>
                 <option value="mobile_money">Mobile Money</option>
@@ -654,7 +654,7 @@ export function ClientsScreen() {
 
             {/* Référence */}
             <div>
-              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+              <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
                 Référence
               </label>
               <input
@@ -662,13 +662,13 @@ export function ClientsScreen() {
                 value={creditPaymentReference}
                 onChange={(e) => setCreditPaymentReference(e.target.value)}
                 placeholder="N° de transaction, chèque..."
-                className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                className="w-full px-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none"
               />
             </div>
 
             {/* Notes */}
             <div>
-              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+              <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">
                 Notes
               </label>
               <textarea
@@ -676,34 +676,36 @@ export function ClientsScreen() {
                 onChange={(e) => setCreditPaymentNotes(e.target.value)}
                 placeholder="Notes ou remarques…"
                 rows={3}
-                className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none resize-none"
+                className="w-full px-4 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white focus:ring-2 focus:ring-primary dark:focus:ring-dark-accent outline-none resize-none"
               />
             </div>
           </div>
 
           {/* Footer */}
-          <div className="flex items-center gap-3 p-5 border-t border-neutral-200 dark:border-white/10">
-            <button
-              onClick={() => {
-                setShowCreditPaymentModal(false);
-                setCreditPaymentError('');
-              }}
-              className="flex-1 py-2.5 px-4 bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-neutral-400 rounded-xl font-bold hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={handleSubmitCreditPayment}
-              disabled={isPayingCredit || !creditPaymentAmount.trim()}
-              className="flex-1 py-2.5 px-4 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isPayingCredit ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4" />
-              )}
-              Enregistrer
-            </button>
+          <div className="p-4 md:p-6 border-t border-neutral-100 dark:border-white/5">
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowCreditPaymentModal(false);
+                  setCreditPaymentError('');
+                }}
+                className="flex-1 px-4 py-3 rounded-xl font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-dark-card/40 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSubmitCreditPayment}
+                disabled={isPayingCredit || !creditPaymentAmount.trim()}
+                className="flex-1 px-4 py-3 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isPayingCredit ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                Enregistrer
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -722,13 +724,13 @@ export function ClientsScreen() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Credit overrun warning */}
         {client.depassement_credit && (
-          <div className="p-4 bg-red-50 dark:bg-red-500/10 border-2 border-red-300 dark:border-red-500/30 rounded-xl flex items-start gap-3">
-            <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="p-4 bg-semantic-red/10 border-2 border-semantic-red/20 rounded-xl flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-semantic-red flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-bold text-red-700 dark:text-red-400">
+              <p className="text-sm font-bold text-semantic-red">
                 ⚠️ Dépassement de crédit
               </p>
-              <p className="text-sm text-red-600 dark:text-red-300">
+              <p className="text-sm text-semantic-red/80">
                 Plafond: {formatMontant(client.credit_limit ?? 0)} — Dû: {formatMontant(client.solde_restant ?? 0)}
               </p>
             </div>
@@ -736,14 +738,14 @@ export function ClientsScreen() {
         )}
 
         {/* Client info card */}
-        <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
+        <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden group hover:border-primary/20 dark:hover:border-dark-accent/30 transition-all p-6">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary dark:text-dark-accent flex-shrink-0">
                 <Users className="w-7 h-7" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-neutral-900 dark:text-white">
+                <h2 className="text-xl font-bold text-primary dark:text-white font-display">
                   {displayName}
                 </h2>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
@@ -767,17 +769,17 @@ export function ClientsScreen() {
               className="p-2 hover:bg-neutral-100 dark:hover:bg-white/10 rounded-lg transition-colors"
               title="Modifier le client"
             >
-              <Edit className="w-5 h-5 text-neutral-500" />
+              <Edit className="w-5 h-5 text-neutral-400" />
             </button>
           </div>
 
           {client.notes && (
             <div className="mt-4 p-3 bg-neutral-50 dark:bg-white/5 rounded-lg">
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">{client.notes}</p>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">{client.notes}</p>
             </div>
           )}
 
-          <div className="mt-2 text-xs text-neutral-400">
+          <div className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
             Client depuis le{' '}
             {format(new Date(client.date_creation), 'dd MMMM yyyy', { locale: fr })}
           </div>
@@ -785,15 +787,15 @@ export function ClientsScreen() {
 
         {/* Stats cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+          <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border border-neutral-200 dark:border-white/5 shadow-soft p-4">
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
               Commandes
             </p>
-            <p className="text-2xl font-bold text-neutral-900 dark:text-white">
+            <p className="text-2xl font-bold text-primary dark:text-white">
               {client.nombre_commandes ?? 0}
             </p>
           </div>
-          <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+          <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border border-neutral-200 dark:border-white/5 shadow-soft p-4">
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
               Chiffre d'affaires
             </p>
@@ -801,7 +803,7 @@ export function ClientsScreen() {
               {formatMontant(client.chiffre_affaires_total ?? 0)}
             </p>
           </div>
-          <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+          <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border border-neutral-200 dark:border-white/5 shadow-soft p-4">
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
               Solde restant
             </p>
@@ -815,11 +817,11 @@ export function ClientsScreen() {
               {formatMontant(client.solde_restant ?? 0)}
             </p>
           </div>
-          <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+          <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border border-neutral-200 dark:border-white/5 shadow-soft p-4">
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
               Dernière commande
             </p>
-            <p className="text-sm font-bold text-neutral-900 dark:text-white">
+            <p className="text-sm font-bold text-primary dark:text-white">
               {client.derniere_commande
                 ? format(new Date(client.derniere_commande), 'dd/MM/yy', { locale: fr })
                 : '—'}
@@ -828,12 +830,12 @@ export function ClientsScreen() {
         </div>
 
         {/* Note journalière */}
-        <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
+        <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden group hover:border-primary/20 dark:hover:border-dark-accent/30 transition-all p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+            <h3 className="text-lg font-bold text-primary dark:text-white flex items-center gap-2">
               <Receipt className="w-5 h-5 text-primary dark:text-dark-accent" />
               Note du jour
-              <span className="text-sm font-normal text-neutral-400">
+              <span className="text-sm font-normal text-neutral-400 dark:text-neutral-500">
                 {format(new Date(), 'dd MMMM yyyy', { locale: fr })}
               </span>
             </h3>
@@ -871,7 +873,7 @@ export function ClientsScreen() {
           </div>
 
           {noteError && (
-            <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg text-sm text-red-700 dark:text-red-400">
+            <div className="bg-semantic-red/10 border border-semantic-red/20 rounded-lg text-semantic-red text-sm p-3">
               {noteError}
             </div>
           )}
@@ -881,13 +883,13 @@ export function ClientsScreen() {
               <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
                 <span className="text-neutral-500 dark:text-neutral-400">
                   Commandes aujourd'hui:{' '}
-                  <span className="font-bold text-neutral-900 dark:text-white">
+                  <span className="font-bold text-primary dark:text-white">
                     {noteJournaliere.nombre_commandes}
                   </span>
                 </span>
                 <span className="text-neutral-500 dark:text-neutral-400">
                   Total:{' '}
-                  <span className="font-bold text-neutral-900 dark:text-white">
+                  <span className="font-bold text-primary dark:text-white">
                     {formatMontant(noteJournaliere.total_commande)}
                   </span>
                 </span>
@@ -912,7 +914,7 @@ export function ClientsScreen() {
               </div>
 
               {noteJournaliere.lignes.length > 0 && (
-                <div className="border border-neutral-200 dark:border-white/10 rounded-lg overflow-hidden">
+                <div className="border border-neutral-200 dark:border-white/5 rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
                     <thead className="bg-neutral-50 dark:bg-white/5">
                       <tr>
@@ -933,17 +935,17 @@ export function ClientsScreen() {
                     <tbody className="divide-y divide-neutral-100 dark:divide-white/5">
                       {noteJournaliere.lignes.map((ligne, idx) => (
                         <tr key={`${ligne.commande_id}-${ligne.produit_id}-${idx}`}>
-                          <td className="px-4 py-2.5 text-neutral-900 dark:text-white">
+                          <td className="px-4 py-2.5 text-primary dark:text-white">
                             <div>{ligne.nom_produit}</div>
-                            <div className="text-xs text-neutral-400">{ligne.numero_commande}</div>
+                            <div className="text-xs text-neutral-400 dark:text-neutral-500">{ligne.numero_commande}</div>
                           </td>
-                          <td className="px-4 py-2.5 text-center text-neutral-700 dark:text-neutral-300">
+                          <td className="px-4 py-2.5 text-center text-neutral-500 dark:text-neutral-400">
                             {ligne.quantite}
                           </td>
-                          <td className="px-4 py-2.5 text-right text-neutral-700 dark:text-neutral-300">
+                          <td className="px-4 py-2.5 text-right text-neutral-500 dark:text-neutral-400">
                             {formatMontant(ligne.prix_unitaire)}
                           </td>
-                          <td className="px-4 py-2.5 text-right font-bold text-neutral-900 dark:text-white">
+                          <td className="px-4 py-2.5 text-right font-bold text-primary dark:text-white">
                             {formatMontant(ligne.montant_ligne)}
                           </td>
                         </tr>
@@ -954,13 +956,13 @@ export function ClientsScreen() {
               )}
 
               {noteJournaliere.lignes.length === 0 && (
-                <p className="text-sm text-neutral-400 text-center py-4">
+                <p className="text-sm text-neutral-400 dark:text-neutral-500 text-center py-4">
                   Aucune ligne de commande aujourd'hui.
                 </p>
               )}
             </div>
           ) : !noteError && (
-            <p className="text-sm text-neutral-400">
+            <p className="text-sm text-neutral-400 dark:text-neutral-500">
               Cliquez sur "Voir la note du jour" pour afficher la note consolidée des commandes
               d'aujourd'hui pour ce client.
             </p>
@@ -968,9 +970,9 @@ export function ClientsScreen() {
         </div>
 
         {/* Historique des paiements crédit */}
-        <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
+        <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden group hover:border-primary/20 dark:hover:border-dark-accent/30 transition-all p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+            <h3 className="text-lg font-bold text-primary dark:text-white flex items-center gap-2">
               <Clock className="w-5 h-5 text-primary dark:text-dark-accent" />
               Historique des paiements crédit
             </h3>
@@ -989,13 +991,13 @@ export function ClientsScreen() {
           </div>
 
           {creditHistoryError && (
-            <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg text-sm text-red-700 dark:text-red-400">
+            <div className="bg-semantic-red/10 border border-semantic-red/20 rounded-lg text-semantic-red text-sm p-3">
               {creditHistoryError}
             </div>
           )}
 
           {creditPayments.length > 0 ? (
-            <div className="border border-neutral-200 dark:border-white/10 rounded-lg overflow-hidden">
+            <div className="border border-neutral-200 dark:border-white/5 rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-neutral-50 dark:bg-white/5">
                   <tr>
@@ -1019,7 +1021,7 @@ export function ClientsScreen() {
                       key={payment.id}
                       className={idx % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-neutral-50 dark:bg-white/5'}
                     >
-                      <td className="px-4 py-2.5 text-neutral-900 dark:text-white">
+                      <td className="px-4 py-2.5 text-primary dark:text-white">
                         {payment.date_paiement
                           ? format(new Date(payment.date_paiement), 'dd/MM/yyyy HH:mm', { locale: fr })
                           : '—'}
@@ -1027,10 +1029,10 @@ export function ClientsScreen() {
                       <td className="px-4 py-2.5 text-right font-bold text-green-600 dark:text-green-400">
                         {formatMontant(payment.montant ?? 0)}
                       </td>
-                      <td className="px-4 py-2.5 text-neutral-700 dark:text-neutral-300 capitalize">
+                      <td className="px-4 py-2.5 text-neutral-500 dark:text-neutral-400 capitalize">
                         {(payment.mode_paiement || '').replace('_', ' ')}
                       </td>
-                      <td className="px-4 py-2.5 text-neutral-500 dark:text-neutral-400">
+                      <td className="px-4 py-2.5 text-neutral-400 dark:text-neutral-500">
                         {payment.reference || '—'}
                       </td>
                     </tr>
@@ -1039,7 +1041,7 @@ export function ClientsScreen() {
               </table>
             </div>
           ) : !creditHistoryError && (
-            <p className="text-sm text-neutral-400">
+            <p className="text-sm text-neutral-400 dark:text-neutral-500">
               Cliquez sur "Charger l'historique" pour afficher les paiements crédit de ce client.
             </p>
           )}
@@ -1061,12 +1063,12 @@ export function ClientsScreen() {
             placeholder="Rechercher un client (nom, téléphone, email)..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+            className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-primary dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
           />
         </div>
         <button
           onClick={handleOpenCreate}
-          className="flex items-center justify-center gap-2 px-5 py-2.5 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold hover:opacity-90 transition-opacity flex-shrink-0"
+          className="flex items-center gap-2 px-4 py-2 bg-primary dark:bg-dark-accent text-white rounded-lg font-bold text-sm hover:opacity-90 transition-opacity flex-shrink-0"
         >
           <UserPlus className="w-5 h-5" />
           Nouveau client
@@ -1076,7 +1078,7 @@ export function ClientsScreen() {
       {/* Loading */}
       {clientsLoading ? (
         <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary dark:border-white" />
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary dark:border-dark-accent" />
         </div>
       ) : filteredClients.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1089,7 +1091,7 @@ export function ClientsScreen() {
               <div
                 key={client.id}
                 onClick={() => handleSelectClient(client)}
-                className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden cursor-pointer transition-all hover:border-neutral-300 dark:hover:border-white/10 hover:shadow-md group"
+                className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden cursor-pointer group hover:border-primary/20 dark:hover:border-dark-accent/30 transition-all"
               >
                 <div className="p-4">
                   <div className="flex items-center gap-3 mb-3">
@@ -1097,7 +1099,7 @@ export function ClientsScreen() {
                       {initials.toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-sm text-neutral-900 dark:text-white truncate">
+                      <h3 className="font-bold text-sm text-primary dark:text-white truncate">
                         {displayName}
                       </h3>
                       <div className="flex flex-col gap-0.5 mt-0.5">
@@ -1123,7 +1125,7 @@ export function ClientsScreen() {
                       >
                         <Edit className="w-4 h-4 text-neutral-400" />
                       </button>
-                      <ChevronRight className="w-5 h-5 text-neutral-300 dark:text-neutral-600 group-hover:text-neutral-500 transition-colors" />
+                      <ChevronRight className="w-5 h-5 text-neutral-300 dark:text-neutral-600 group-hover:text-neutral-400 dark:group-hover:text-neutral-500 transition-colors" />
                     </div>
                   </div>
 
@@ -1132,7 +1134,7 @@ export function ClientsScreen() {
                       <p className="text-xs text-neutral-500 dark:text-neutral-400">
                         Chiffre d'affaires
                       </p>
-                      <p className="text-sm font-bold text-neutral-900 dark:text-white">
+                      <p className="text-sm font-bold text-primary dark:text-white">
                         {formatMontant(client.chiffre_affaires_total ?? 0)}
                       </p>
                     </div>
@@ -1183,7 +1185,7 @@ export function ClientsScreen() {
           })}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-12 text-neutral-400 dark:text-neutral-500">
+        <div className="flex flex-col items-center justify-center py-16 text-neutral-400 dark:text-neutral-500">
           <Users className="w-12 h-12 mb-2 opacity-50" />
           {searchTerm ? (
             <p>Aucun client ne correspond à votre recherche</p>
@@ -1207,20 +1209,20 @@ export function ClientsScreen() {
   // ── Main render ─────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-background-light dark:bg-background-dark pb-20 md:pb-6">
+    <div className="min-h-screen bg-neutral-50 dark:bg-dark-bg pb-20 md:pb-6">
       {/* Header */}
-      <div className="p-4 md:p-6 bg-white/80 dark:bg-neutral-900/60 backdrop-blur-xl border-b border-neutral-200/50 dark:border-white/5">
+      <div className="p-4 md:p-6 bg-white dark:bg-dark-card/30 dark:backdrop-blur-xl border-b border-neutral-200 dark:border-white/5">
         <div className="flex items-center gap-4">
           {viewMode === 'detail' && (
             <button
               onClick={handleBackToList}
               className="p-2 hover:bg-neutral-100 dark:hover:bg-white/10 rounded-lg transition-colors"
             >
-              <ArrowLeft className="w-5 h-5 text-neutral-600 dark:text-neutral-400" />
+              <ArrowLeft className="w-5 h-5 text-neutral-500 dark:text-neutral-400" />
             </button>
           )}
           <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-white font-display">
+            <h1 className="text-2xl font-bold text-primary dark:text-white font-display">
               {viewMode === 'detail'
                 ? [selectedClient?.prenom, selectedClient?.nom].filter(Boolean).join(' ') || 'Client'
                 : 'Clients'}
@@ -1239,7 +1241,7 @@ export function ClientsScreen() {
         {viewMode === 'detail' ? renderDetail() : renderList()}
       </div>
 
-      {/* Modal */}
+      {/* Modals */}
       {renderModal()}
       {renderCreditPaymentModal()}
     </div>
