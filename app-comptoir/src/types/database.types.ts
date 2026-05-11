@@ -88,11 +88,14 @@ export interface Facture {
   numero_facture: string;
   commande_id: string;
   montant_total: number;
+  montant_paye: number;
+  montant_restant: number;
   statut: 'en_attente_paiement' | 'partiellement_payee' | 'payee';
   statut_retour?: 'sans_retour' | 'retour_partiel' | 'retour_total';
-  montant_paye: number;
+  credit_sur: boolean;
   etablissement_id: string;
   date_generation: string;
+  date_paiement_complet?: string;
 }
 
 export interface Encaissement {

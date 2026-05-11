@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   CheckCircle,
   X,
@@ -34,6 +34,9 @@ export default function ValidationScreen() {
 
   // État pour suivre le client sélectionné par commande
   const [clientSelections, setClientSelections] = useState<Record<string, string>>({});
+
+  // Ref pour suivre les assignations client en cours (évite la race condition avec la validation)
+  const pendingAssignments = useRef<Map<string, Promise<void>>>(new Map());
 
   // Charger la liste des clients actifs
   const { data: clients } = useSupabaseQuery<{ id: string; nom: string; prenom: string }[]>(
@@ -76,11 +79,21 @@ export default function ValidationScreen() {
   // Mettre à jour le client_id d'une commande
   const handleAssignClient = async (commandeId: string, clientId: string) => {
     setClientSelections(prev => ({ ...prev, [commandeId]: clientId }));
-    await supabase.from('commandes').update({ client_id: clientId || null }).eq('id', commandeId);
+    // Sauvegarder la promesse pour permettre à handleValidate d'attendre la fin
+    const promise = supabase.from('commandes').update({ client_id: clientId || null }).eq('id', commandeId).then(() => {
+      pendingAssignments.current.delete(commandeId);
+    });
+    pendingAssignments.current.set(commandeId, promise);
+    await promise;
   };
 
-  const handleValidate = (commandeId: string) => {
+  const handleValidate = async (commandeId: string) => {
     setError('');
+    // Attendre la fin de toute assignation client en cours avant de valider
+    const pending = pendingAssignments.current.get(commandeId);
+    if (pending) {
+      await pending;
+    }
     validateCommande(commandeId, {
       onSuccess: () => {
         setSelectedCommande(null);

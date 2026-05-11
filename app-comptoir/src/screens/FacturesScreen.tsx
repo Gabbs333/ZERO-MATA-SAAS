@@ -627,7 +627,15 @@ export default function FacturesScreen() {
               <div key={facture.id} className="group bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl rounded-2xl border border-white/20 dark:border-white/5 shadow-soft hover:shadow-glow hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col">
                 <div className="p-6 flex-1 relative">
                   <div className="flex justify-between items-start mb-4">
-                     {getStatutBadge(facture.statut)}
+                     <div className="flex items-center gap-2 flex-wrap">
+                       {getStatutBadge(facture.statut)}
+                       {facture.credit_sur && (
+                         <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-500/20 flex items-center gap-1">
+                           <CreditCard className="w-3 h-3" />
+                           À crédit
+                         </span>
+                       )}
+                     </div>
                      <div className="flex items-center gap-2">
                        <button
                          onClick={() => handleOpenDetails(facture)}
@@ -945,7 +953,15 @@ export default function FacturesScreen() {
                   </div>
                   <div>
                     <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider block mb-1">Statut</span>
-                    {getStatutBadge(selectedFacture.statut)}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {getStatutBadge(selectedFacture.statut)}
+                      {selectedFacture.credit_sur && (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-500/20 flex items-center gap-1">
+                          <CreditCard className="w-3 h-3" />
+                          À crédit
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
