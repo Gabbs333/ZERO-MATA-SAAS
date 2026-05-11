@@ -329,6 +329,57 @@ export function ClientsScreen() {
     }
   }, [selectedClient]);
 
+  const handleSubmitCreditPayment = useCallback(async () => {
+    if (!selectedClient) return;
+    const amount = parseInt(creditPaymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setCreditPaymentError('Veuillez saisir un montant valide.');
+      return;
+    }
+    setIsPayingCredit(true);
+    setCreditPaymentError('');
+    try {
+      const { data, error } = await supabase.rpc('record_credit_payment', {
+        p_client_id: selectedClient.id,
+        p_montant: amount,
+        p_mode_paiement: creditPaymentMode,
+        p_reference: creditPaymentReference || null,
+        p_notes: creditPaymentNotes || null
+      });
+      if (error) throw error;
+      setShowCreditPaymentModal(false);
+      setCreditPaymentAmount('');
+      setCreditPaymentReference('');
+      setCreditPaymentNotes('');
+      refetchClients();
+      alert(`Paiement de ${formatPrice(amount)} enregistré. ${data?.factures_soldees || 0} facture(s) soldée(s).`);
+    } catch (err: any) {
+      setCreditPaymentError(err.message || 'Erreur lors du paiement.');
+    } finally {
+      setIsPayingCredit(false);
+    }
+  }, [selectedClient, creditPaymentAmount, creditPaymentMode, creditPaymentReference, creditPaymentNotes, refetchClients]);
+
+  const handleLoadCreditHistory = useCallback(async () => {
+    if (!selectedClient) return;
+    setCreditHistoryLoading(true);
+    setCreditHistoryError('');
+    try {
+      const { data, error } = await supabase
+        .from('credit_payments')
+        .select('*')
+        .eq('client_id', selectedClient.id)
+        .order('date_paiement', { ascending: false });
+      if (error) throw error;
+      setCreditPayments(data || []);
+    } catch (err: any) {
+      console.error('Error fetching credit history:', err);
+      setCreditHistoryError(err.message || 'Erreur lors du chargement de l\'historique.');
+    } finally {
+      setCreditHistoryLoading(false);
+    }
+  }, [selectedClient]);
+
   // ── Render helpers ─────────────────────────────────────────────────────
 
   const renderModal = () => {
@@ -524,6 +575,141 @@ export function ClientsScreen() {
     );
   };
 
+  // ── Render: Credit payment modal ─────────────────────────────────────
+
+  const renderCreditPaymentModal = () => {
+    if (!showCreditPaymentModal || !selectedClient) return null;
+    const displayName = [selectedClient.prenom, selectedClient.nom].filter(Boolean).join(' ') || 'Client';
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={() => {
+            setShowCreditPaymentModal(false);
+            setCreditPaymentError('');
+          }}
+        />
+
+        {/* Dialog */}
+        <div className="relative bg-white dark:bg-neutral-800 rounded-2xl border border-neutral-200 dark:border-white/10 shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-white/10">
+            <h2 className="text-lg font-bold text-neutral-900 dark:text-white">
+              Paiement crédit - {displayName}
+            </h2>
+            <button
+              onClick={() => {
+                setShowCreditPaymentModal(false);
+                setCreditPaymentError('');
+              }}
+              className="p-1.5 hover:bg-neutral-100 dark:hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-neutral-500" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="p-5 space-y-4">
+            {creditPaymentError && (
+              <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg text-sm text-red-700 dark:text-red-400">
+                {creditPaymentError}
+              </div>
+            )}
+
+            {/* Montant (required) */}
+            <div>
+              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+                Montant <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <input
+                  type="number"
+                  min={1}
+                  value={creditPaymentAmount}
+                  onChange={(e) => setCreditPaymentAmount(e.target.value)}
+                  placeholder="Montant en XAF"
+                  className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Mode de paiement */}
+            <div>
+              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+                Mode de paiement
+              </label>
+              <select
+                value={creditPaymentMode}
+                onChange={(e) => setCreditPaymentMode(e.target.value as typeof creditPaymentMode)}
+                className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+              >
+                <option value="especes">Espèces</option>
+                <option value="mobile_money">Mobile Money</option>
+                <option value="carte_bancaire">Carte bancaire</option>
+              </select>
+            </div>
+
+            {/* Référence */}
+            <div>
+              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+                Référence
+              </label>
+              <input
+                type="text"
+                value={creditPaymentReference}
+                onChange={(e) => setCreditPaymentReference(e.target.value)}
+                placeholder="N° de transaction, chèque..."
+                className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+              />
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+                Notes
+              </label>
+              <textarea
+                value={creditPaymentNotes}
+                onChange={(e) => setCreditPaymentNotes(e.target.value)}
+                placeholder="Notes ou remarques…"
+                rows={3}
+                className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none resize-none"
+              />
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center gap-3 p-5 border-t border-neutral-200 dark:border-white/10">
+            <button
+              onClick={() => {
+                setShowCreditPaymentModal(false);
+                setCreditPaymentError('');
+              }}
+              className="flex-1 py-2.5 px-4 bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-neutral-400 rounded-xl font-bold hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={handleSubmitCreditPayment}
+              disabled={isPayingCredit || !creditPaymentAmount.trim()}
+              className="flex-1 py-2.5 px-4 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isPayingCredit ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4" />
+              )}
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ── Render: Client detail ──────────────────────────────────────────────
 
   const renderDetail = () => {
@@ -534,6 +720,21 @@ export function ClientsScreen() {
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
+        {/* Credit overrun warning */}
+        {client.depassement_credit && (
+          <div className="p-4 bg-red-50 dark:bg-red-500/10 border-2 border-red-300 dark:border-red-500/30 rounded-xl flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-red-700 dark:text-red-400">
+                ⚠️ Dépassement de crédit
+              </p>
+              <p className="text-sm text-red-600 dark:text-red-300">
+                Plafond: {formatPrice(client.credit_limit ?? 0)} — Dû: {formatPrice(client.solde_restant ?? 0)}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Client info card */}
         <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
           <div className="flex items-start justify-between mb-4">
@@ -636,18 +837,37 @@ export function ClientsScreen() {
                 {format(new Date(), 'dd MMMM yyyy', { locale: fr })}
               </span>
             </h3>
-            <button
-              onClick={handleViewNoteJournaliere}
-              disabled={isLoadingNote}
-              className="px-4 py-2 bg-primary/10 text-primary dark:bg-dark-accent/10 dark:text-dark-accent rounded-lg text-sm font-bold hover:bg-primary/20 dark:hover:bg-dark-accent/20 transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {isLoadingNote ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />
-              ) : (
-                <Receipt className="w-4 h-4" />
-              )}
-              Voir la note du jour
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setShowCreditPaymentModal(true);
+                  setCreditPaymentAmount('');
+                  setCreditPaymentReference('');
+                  setCreditPaymentNotes('');
+                  setCreditPaymentError('');
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                  (client.solde_restant ?? 0) > 0
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/30'
+                    : 'bg-primary/10 text-primary dark:bg-dark-accent/10 dark:text-dark-accent hover:bg-primary/20 dark:hover:bg-dark-accent/20'
+                }`}
+              >
+                <Wallet className="w-4 h-4" />
+                Paiement crédit
+              </button>
+              <button
+                onClick={handleViewNoteJournaliere}
+                disabled={isLoadingNote}
+                className="px-4 py-2 bg-primary/10 text-primary dark:bg-dark-accent/10 dark:text-dark-accent rounded-lg text-sm font-bold hover:bg-primary/20 dark:hover:bg-dark-accent/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isLoadingNote ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />
+                ) : (
+                  <Receipt className="w-4 h-4" />
+                )}
+                Voir la note du jour
+              </button>
+            </div>
           </div>
 
           {noteError && (
@@ -743,6 +963,84 @@ export function ClientsScreen() {
             <p className="text-sm text-neutral-400">
               Cliquez sur "Voir la note du jour" pour afficher la note consolidée des commandes
               d'aujourd'hui pour ce client.
+            </p>
+          )}
+        </div>
+
+        {/* Historique des paiements crédit */}
+        <div className="bg-white dark:bg-neutral-800/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary dark:text-dark-accent" />
+              Historique des paiements crédit
+            </h3>
+            <button
+              onClick={handleLoadCreditHistory}
+              disabled={creditHistoryLoading}
+              className="px-4 py-2 bg-primary/10 text-primary dark:bg-dark-accent/10 dark:text-dark-accent rounded-lg text-sm font-bold hover:bg-primary/20 dark:hover:bg-dark-accent/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {creditHistoryLoading ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />
+              ) : (
+                <Clock className="w-4 h-4" />
+              )}
+              Charger l'historique
+            </button>
+          </div>
+
+          {creditHistoryError && (
+            <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg text-sm text-red-700 dark:text-red-400">
+              {creditHistoryError}
+            </div>
+          )}
+
+          {creditPayments.length > 0 ? (
+            <div className="border border-neutral-200 dark:border-white/10 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 dark:bg-white/5">
+                  <tr>
+                    <th className="text-left px-4 py-2.5 text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                      Date
+                    </th>
+                    <th className="text-right px-4 py-2.5 text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                      Montant
+                    </th>
+                    <th className="text-left px-4 py-2.5 text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                      Mode
+                    </th>
+                    <th className="text-left px-4 py-2.5 text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                      Référence
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100 dark:divide-white/5">
+                  {creditPayments.map((payment, idx) => (
+                    <tr
+                      key={payment.id}
+                      className={idx % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-neutral-50 dark:bg-white/5'}
+                    >
+                      <td className="px-4 py-2.5 text-neutral-900 dark:text-white">
+                        {payment.date_paiement
+                          ? format(new Date(payment.date_paiement), 'dd/MM/yyyy HH:mm', { locale: fr })
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-bold text-green-600 dark:text-green-400">
+                        {formatPrice(payment.montant ?? 0)}
+                      </td>
+                      <td className="px-4 py-2.5 text-neutral-700 dark:text-neutral-300 capitalize">
+                        {(payment.mode_paiement || '').replace('_', ' ')}
+                      </td>
+                      <td className="px-4 py-2.5 text-neutral-500 dark:text-neutral-400">
+                        {payment.reference || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : !creditHistoryError && (
+            <p className="text-sm text-neutral-400">
+              Cliquez sur "Charger l'historique" pour afficher les paiements crédit de ce client.
             </p>
           )}
         </div>
@@ -943,6 +1241,7 @@ export function ClientsScreen() {
 
       {/* Modal */}
       {renderModal()}
+      {renderCreditPaymentModal()}
     </div>
   );
 }

@@ -164,6 +164,22 @@ export function DashboardScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
+  // Fetch credit overrun alerts (creances_clients)
+  const { data: creancesData, isLoading: creancesLoading } = useSupabaseQuery(
+    ['creances_clients', profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('creances_clients')
+        .select('*')
+        .eq('etablissement_id', profile.etablissement_id)
+        .order('solde_du', { ascending: false })
+        .limit(5);
+      return { data, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
   // Client-side KPIs Calculation
   const kpis = useMemo(() => {
     // Robustness: Handle missing data gracefully
@@ -689,6 +705,36 @@ export function DashboardScreen() {
             </button>
           </div>
         </div>
+
+        {/* Credit Alert Widget */}
+        {!creancesLoading && creancesData && creancesData.some((c: any) => c.depassement_credit === true) && (
+          <div className="rounded-2xl p-4 bg-white dark:bg-dark-card/40 border border-red-200 dark:border-red-500/20 shadow-soft border-l-4 border-l-red-500">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">🚨</span>
+              <span className="text-[11px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Dépassement de crédit</span>
+            </div>
+            <div className="space-y-2 mb-3">
+              {creancesData
+                .filter((c: any) => c.depassement_credit === true)
+                .slice(0, 3)
+                .map((client: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between text-xs">
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-neutral-800 dark:text-white">{client.nom_client || client.nom || 'Client'}</span>
+                      <span className="text-[10px] text-neutral-400 dark:text-neutral-500">Limite: {(client.limite_credit || 0).toLocaleString('fr-FR')} XAF</span>
+                    </div>
+                    <span className="font-bold text-red-500">{formatMontant(client.solde_du || 0)}</span>
+                  </div>
+                ))}
+            </div>
+            <button
+              onClick={() => navigate('/creances')}
+              className="text-[10px] font-bold text-primary dark:text-white underline decoration-neutral-300 dark:decoration-white/20 underline-offset-4 uppercase tracking-widest active:scale-95 transition-transform"
+            >
+              Voir détails
+            </button>
+          </div>
+        )}
 
       </div>
 
