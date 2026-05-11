@@ -869,10 +869,16 @@ export function ClientsScreen() {
                               : 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
                           }`}
                         >
-                          {client.d_commandes ?? 0} commande
-                      {(client.nombre_commandes ?? 0) > 1 ? 's' : ''}
-                    </span>
-                  </div>
+                          {formatPrice(client.solde_restant ?? 0)}
+                        </span>
+                      )}
+                      {(client.nombre_commandes ?? 0) > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-neutral-100 dark:bg-white/10 text-neutral-600 dark:text-neutral-400 rounded-full text-xs font-medium">
+                          {client.nombre_commandes} commande{(client.nombre_commandes ?? 0) > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
