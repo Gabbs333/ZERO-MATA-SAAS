@@ -70,6 +70,7 @@ export interface Commande {
   etablissement_id: string;
   date_creation: string;
   date_validation?: string;
+  client_id?: string | null;
 }
 
 export interface CommandeItem {
@@ -244,4 +245,17 @@ export interface EchangeItemEntrant {
 export interface EchangeWithDetails extends Echange {
   echange_items_sortants: EchangeItemSortant[];
   echange_items_entrants: EchangeItemEntrant[];
+}
+
+export interface Client {
+  id: string;
+  nom: string;
+  prenom: string;
+  telephone: string | null;
+  email: string | null;
+  notes: string | null;
+  actif: boolean;
+  etablissement_id: string;
+  date_creation: string;
+  date_modification: string;
 }

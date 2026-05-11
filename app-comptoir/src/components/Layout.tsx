@@ -16,7 +16,8 @@ import {
   Store,
   Clock,
   ArrowLeftCircle,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Users
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -64,6 +65,7 @@ export default function Layout({ children }: LayoutProps) {
     { text: 'Factures', icon: Receipt, path: '/factures' },
     { text: 'Historique', icon: Clock, path: '/historique' },
     { text: 'Stock', icon: Package, path: '/stock' },
+    { text: 'Clients', icon: Users, path: '/clients' },
     { text: 'Échanges', icon: ArrowRightLeft, path: '/echanges' },
     { text: 'Retours', icon: ArrowLeftCircle, path: '/retours' },
   ];
