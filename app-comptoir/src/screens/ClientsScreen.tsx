@@ -18,6 +18,9 @@ import {
   ArrowLeft,
   Receipt,
   Clock,
+  Wallet,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import type { Client } from '../types/database.types';
 
@@ -28,6 +31,10 @@ interface ClientWithStats extends Client {
   chiffre_affaires_total?: number;
   solde_restant?: number;
   derniere_commande?: string;
+  credit_active?: boolean;
+  credit_limit?: number;
+  depassement_credit?: boolean;
+  jours_retard?: number;
 }
 
 interface ClientStatsRow {
@@ -79,6 +86,8 @@ export function ClientsScreen() {
   const [formTelephone, setFormTelephone] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formNotes, setFormNotes] = useState('');
+  const [formCreditActive, setFormCreditActive] = useState(false);
+  const [formCreditLimit, setFormCreditLimit] = useState(0);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -89,6 +98,20 @@ export function ClientsScreen() {
   const [noteJournaliere, setNoteJournaliere] = useState<NoteJournaliere | null>(null);
   const [isLoadingNote, setIsLoadingNote] = useState(false);
   const [noteError, setNoteError] = useState('');
+
+  // ── Credit payment modal state ────────────────────────────────────────
+  const [showCreditPaymentModal, setShowCreditPaymentModal] = useState(false);
+  const [creditPaymentAmount, setCreditPaymentAmount] = useState('');
+  const [creditPaymentMode, setCreditPaymentMode] = useState<'especes' | 'mobile_money' | 'carte_bancaire'>('especes');
+  const [creditPaymentReference, setCreditPaymentReference] = useState('');
+  const [creditPaymentNotes, setCreditPaymentNotes] = useState('');
+  const [creditPaymentError, setCreditPaymentError] = useState('');
+  const [isPayingCredit, setIsPayingCredit] = useState(false);
+
+  // ── Credit history state ──────────────────────────────────────────────
+  const [creditPayments, setCreditPayments] = useState<any[]>([]);
+  const [creditHistoryLoading, setCreditHistoryLoading] = useState(false);
+  const [creditHistoryError, setCreditHistoryError] = useState('');
 
   // ── Data: Clients ──────────────────────────────────────────────────────
   const {
@@ -173,6 +196,8 @@ export function ClientsScreen() {
     setFormTelephone('');
     setFormEmail('');
     setFormNotes('');
+    setFormCreditActive(false);
+    setFormCreditLimit(0);
     setFormError('');
     setShowModal(true);
   }, []);
@@ -186,6 +211,8 @@ export function ClientsScreen() {
       setFormTelephone(client.telephone ?? '');
       setFormEmail(client.email ?? '');
       setFormNotes(client.notes ?? '');
+      setFormCreditActive(client.credit_active ?? false);
+      setFormCreditLimit(client.credit_limit ?? 0);
       setFormError('');
       setShowModal(true);
     },
@@ -196,6 +223,8 @@ export function ClientsScreen() {
     setShowModal(false);
     setEditingClient(null);
     setFormError('');
+    setFormCreditActive(false);
+    setFormCreditLimit(0);
   }, []);
 
   const handleSaveClient = useCallback(async () => {
@@ -218,6 +247,8 @@ export function ClientsScreen() {
         telephone: formTelephone.trim() || null,
         email: formEmail.trim() || null,
         notes: formNotes.trim() || null,
+        credit_active: formCreditActive,
+        credit_limit: formCreditActive ? formCreditLimit : 0,
         etablissement_id: etablissementId,
       };
 
@@ -256,6 +287,8 @@ export function ClientsScreen() {
     formTelephone,
     formEmail,
     formNotes,
+    formCreditActive,
+    formCreditLimit,
     etablissementId,
     editingClient,
     handleCloseModal,
@@ -408,6 +441,61 @@ export function ClientsScreen() {
                 className="w-full px-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none resize-none"
               />
             </div>
+
+            {/* Crédit toggle */}
+            <div className="flex items-center justify-between p-4 bg-neutral-50 dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center">
+                  <Wallet className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-neutral-900 dark:text-white">
+                    Activer le crédit
+                  </p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Autoriser les ventes à crédit pour ce client
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormCreditActive(!formCreditActive)}
+                className={`relative w-12 h-7 rounded-full transition-colors duration-200 ${
+                  formCreditActive
+                    ? 'bg-primary dark:bg-dark-accent'
+                    : 'bg-neutral-300 dark:bg-neutral-600'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200 ${
+                    formCreditActive ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Crédit limit */}
+            {formCreditActive && (
+              <div>
+                <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-1.5">
+                  Plafond de crédit (XAF)
+                </label>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
+                  0 = illimité
+                </p>
+                <div className="relative">
+                  <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                  <input
+                    type="number"
+                    min={0}
+                    value={formCreditLimit || ''}
+                    onChange={(e) => setFormCreditLimit(Number(e.target.value))}
+                    placeholder="Montant maximum du crédit"
+                    className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Footer */}
@@ -764,15 +852,24 @@ export function ClientsScreen() {
                     </div>
                   </div>
 
-                  <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-white/5 flex items-center justify-between text-xs text-neutral-400">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {client.derniere_commande
-                        ? format(new Date(client.derniere_commande), 'dd/MM/yy', { locale: fr })
-                        : 'Aucune commande'}
-                    </span>
-                    <span>
-                      {client.nombre_commandes ?? 0} commande
+                  {/* Credit badges */}
+                  {(client.credit_active || (client.solde_restant ?? 0) > 0) && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {client.credit_active && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 rounded-full text-xs font-medium">
+                          <Wallet className="w-3 h-3" />
+                          Crédit
+                        </span>
+                      )}
+                      {(client.solde_restant ?? 0) > 0 && (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                            client.depassement_credit
+                              ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
+                              : 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
+                          }`}
+                        >
+                          {client.d_commandes ?? 0} commande
                       {(client.nombre_commandes ?? 0) > 1 ? 's' : ''}
                     </span>
                   </div>
