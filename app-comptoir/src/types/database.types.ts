@@ -156,6 +156,7 @@ export interface CommandeWithDetails extends Commande {
   commande_items: CommandeItem[];
   tables: Table;
   profiles: Profile;
+  clients?: Client;
 }
 
 export interface FactureWithDetails extends Facture {

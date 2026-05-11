@@ -33,14 +33,14 @@ export function useCommandesEnAttente(limit: number = 50) {
       if (!etablissementId) return { data: [], error: null };
 
       console.log('Fetching commandes (MANUAL JOINS)...');
-      
+
       // 1. Récupérer les commandes brutes filtrées par établissement
       const { data: commandes, error: cmdError } = await supabase
         .from('commandes')
         .select(`
-          id, 
-          statut, 
-          montant_total, 
+          id,
+          statut,
+          montant_total,
           date_creation,
           numero_commande,
           table_id,
@@ -51,12 +51,12 @@ export function useCommandesEnAttente(limit: number = 50) {
         .eq('etablissement_id', etablissementId)
         .order('date_creation', { ascending: false })
         .limit(limit);
-      
+
       if (cmdError) {
         console.error('Error fetching commandes:', cmdError);
         throw cmdError;
       }
-      
+
       if (!commandes || commandes.length === 0) {
         return { data: [], error: null };
       }
@@ -99,9 +99,9 @@ export function useCommandesEnAttente(limit: number = 50) {
         tables: tables?.find(t => t.id === cmd.table_id) || { numero: '?' },
         profiles: profiles?.find(p => p.id === cmd.serveuse_id) || { nom: 'Inconnu', prenom: '' }
       }));
-      
+
       console.log('Commandes constructed:', enrichedData);
-      
+
       return { data: enrichedData as any, error: null };
     },
     {
@@ -132,13 +132,13 @@ export function useCommandesHistory(
       if (!etablissementId) return { data: [], error: null };
 
       console.log('Fetching history commandes...', filters);
-      
+
       let query = supabase
         .from('commandes')
         .select(`
-          id, 
-          statut, 
-          montant_total, 
+          id,
+          statut,
+          montant_total,
           date_creation,
           numero_commande,
           table_id,
@@ -152,15 +152,15 @@ export function useCommandesHistory(
       if (filters.startDate) {
         query = query.gte('date_creation', filters.startDate);
       }
-      
+
       if (filters.endDate) {
         query = query.lte('date_creation', filters.endDate);
       }
-      
+
       if (filters.serveuseId && filters.serveuseId !== 'all') {
         query = query.eq('serveuse_id', filters.serveuseId);
       }
-      
+
       if (filters.statut && filters.statut !== 'all') {
         query = query.eq('statut', filters.statut);
       }
@@ -168,14 +168,14 @@ export function useCommandesHistory(
       if (filters.searchQuery) {
         query = query.ilike('numero_commande', `%${filters.searchQuery}%`);
       }
-      
+
       const { data: commandes, error: cmdError } = await query;
-      
+
       if (cmdError) {
         console.error('Error fetching history:', cmdError);
         throw cmdError;
       }
-      
+
       if (!commandes || commandes.length === 0) {
         return { data: [], error: null };
       }
@@ -218,7 +218,7 @@ export function useCommandesHistory(
         tables: tables?.find(t => t.id === cmd.table_id) || { numero: '?' },
         profiles: profiles?.find(p => p.id === cmd.serveuse_id) || { nom: 'Inconnu', prenom: '' }
       }));
-      
+
       return { data: enrichedData as any, error: null };
     },
     {
@@ -244,7 +244,7 @@ export function useServeuses() {
         .select('id, nom, prenom')
         .eq('role', 'serveuse')
         .eq('etablissement_id', etablissementId);
-        
+
       if (error) throw error;
       return { data, error: null };
     },
@@ -279,10 +279,10 @@ export function useFactures(statut?: string, limit: number = 50, startDate?: str
   const { profile } = useAuthStore();
   const etablissementId = profile?.etablissement_id;
 
-  const queryKey = statut 
-    ? ['factures', statut, limit, startDate, endDate, etablissementId] 
+  const queryKey = statut
+    ? ['factures', statut, limit, startDate, endDate, etablissementId]
     : ['factures', 'all', limit, startDate, endDate, etablissementId];
-  
+
   return useSupabaseQuery<FactureWithDetails[]>(
     queryKey,
     async (supabase) => {
@@ -291,13 +291,14 @@ export function useFactures(statut?: string, limit: number = 50, startDate?: str
       let query = supabase
         .from('factures')
         .select(`
-          *, 
+          *,
           commandes (
-            *, 
-            tables (numero), 
+            *,
+            tables (numero),
             profiles!serveuse_id (nom, prenom),
+            clients!client_id (nom, prenom),
             commande_items (*)
-          ), 
+          ),
           encaissements (*)
         `)
         .eq('etablissement_id', etablissementId)
@@ -310,7 +311,7 @@ export function useFactures(statut?: string, limit: number = 50, startDate?: str
       if (statut) {
         query = query.eq('statut', statut);
       }
-      
+
       if (startDate) {
         query = query.gte('date_generation', startDate);
       }
@@ -339,7 +340,7 @@ export function useStockAlerts() {
         .select('*, produits(nom)')
         .eq('etablissement_id', etablissementId)
         .lte('quantite_actuelle', 5); // Alert if stock <= 5
-      
+
       if (error) throw error;
       return { data, error: null };
     },
@@ -358,7 +359,7 @@ export function useFacturesImpayeesAlerts() {
       if (!etablissementId) return { data: [], error: null };
 
       const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      
+
       const { data, error } = await supabase
         .from('factures')
         .select(`
@@ -377,7 +378,7 @@ export function useFacturesImpayeesAlerts() {
         console.warn("Erreur récupération alertes factures (fallback)", error);
         return { data: [], error: null };
       }
-      
+
       return { data: data || [], error: null };
     },
     { enabled: !!etablissementId }

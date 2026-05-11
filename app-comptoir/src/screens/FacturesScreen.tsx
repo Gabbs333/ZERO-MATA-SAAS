@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useFactures, useFacturesImpayeesAlerts } from '../hooks/useSupabaseQuery';
+import { useFactures, useFacturesImpayeesAlerts, useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { useCreateEncaissement } from '../hooks/useSupabaseMutation';
 import { useRealtimeSubscription } from '../hooks/useRealtimeSubscription';
 import { useCommandeItemsWithRetours } from '../hooks/useCommandeItemsWithRetours';
@@ -27,7 +27,8 @@ import {
   Clock,
   AlertCircle,
   Square,
-  CheckSquare
+  CheckSquare,
+  Users
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { startOfDay, startOfWeek, startOfMonth, endOfDay } from 'date-fns';
@@ -61,6 +62,7 @@ export default function FacturesScreen() {
   const [showReturnSuccess, setShowReturnSuccess] = useState(false);
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
 
   const getStartDate = (filter: TimeFilter) => {
     const now = new Date();
@@ -92,13 +94,28 @@ export default function FacturesScreen() {
 
   const queryClient = useQueryClient();
 
+  // Clients list for filtering
+  const { data: clients } = useSupabaseQuery<{ id: string; nom: string; prenom: string }[]>(
+    ['clients_list', profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase.from('clients').select('id, nom, prenom').eq('etablissement_id', profile.etablissement_id).order('nom');
+      return { data, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
   const filteredFactures = useMemo(() => {
     if (!factures) return [];
-    return factures.filter(f =>
+    let filtered = factures.filter(f =>
       f.numero_facture.toLowerCase().includes(searchQuery.toLowerCase()) ||
       f.commandes.numero_commande.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [factures, searchQuery]);
+    if (selectedClientId) {
+      filtered = filtered.filter(f => f.commandes.client_id === selectedClientId);
+    }
+    return filtered;
+  }, [factures, searchQuery, selectedClientId]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('fr-FR', {
@@ -479,15 +496,32 @@ export default function FacturesScreen() {
           <h1 className="text-3xl font-display font-bold text-primary dark:text-white mb-2">Factures & Encaissements</h1>
           <p className="text-neutral-500 dark:text-neutral-400 text-sm">Gérez les paiements et suivez les créances</p>
         </div>
-        <div className="relative group">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 group-focus-within:text-primary transition-colors" />
-          <input
-            type="text"
-            placeholder="Rechercher N° Facture..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full md:w-64 pl-10 pr-4 py-2.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white/80 dark:bg-neutral-800/80 backdrop-blur-sm text-sm focus:ring-2 focus:ring-primary dark:focus:ring-white outline-none transition-all shadow-sm group-hover:shadow-md"
-          />
+        <div className="flex items-center gap-3">
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 group-focus-within:text-primary transition-colors" />
+            <input
+              type="text"
+              placeholder="Rechercher N° Facture..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full md:w-64 pl-10 pr-4 py-2.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white/80 dark:bg-neutral-800/80 backdrop-blur-sm text-sm focus:ring-2 focus:ring-primary dark:focus:ring-white outline-none transition-all shadow-sm group-hover:shadow-md"
+            />
+          </div>
+          <div className="relative">
+            <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+            <select
+              value={selectedClientId}
+              onChange={(e) => setSelectedClientId(e.target.value)}
+              className="w-full md:w-56 pl-10 pr-4 py-2.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white/80 dark:bg-neutral-800/80 backdrop-blur-sm text-sm focus:ring-2 focus:ring-primary dark:focus:ring-white outline-none transition-all shadow-sm appearance-none cursor-pointer"
+            >
+              <option value="">Tous les clients</option>
+              {clients?.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.prenom} {client.nom}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -631,14 +665,20 @@ export default function FacturesScreen() {
                            {facture.commandes.numero_commande}
                          </Link>
                          {facture.commandes.tables?.numero && (
-                             <span className="text-[10px] font-bold text-neutral-500 uppercase">
-                               Table {facture.commandes.tables.numero}
-                             </span>
-                         )}
+                              <span className="text-[10px] font-bold text-neutral-500 uppercase">
+                                Table {facture.commandes.tables.numero}
+                              </span>
+                          )}
+                          {facture.commandes?.clients && (
+                              <span className="text-[10px] font-medium text-neutral-500 flex items-center gap-1 mt-0.5">
+                                <Users className="w-3 h-3" />
+                                {facture.commandes.clients.prenom} {facture.commandes.clients.nom}
+                              </span>
+                          )}
 
-                       </div>
-                     </div>
-                    {facture.commandes.profiles && (
+                        </div>
+                      </div>
+                     {facture.commandes.profiles && (
                         <div className="flex justify-between text-sm items-center">
                           <span className="text-neutral-500 dark:text-neutral-400 font-medium">Serveuse</span>
                           <span className="font-medium text-neutral-700 dark:text-neutral-300">

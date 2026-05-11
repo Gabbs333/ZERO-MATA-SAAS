@@ -1,18 +1,21 @@
 import { useState } from 'react';
-import { 
-  CheckCircle, 
-  X, 
-  Clock, 
-  User, 
-  UtensilsCrossed, 
-  Eye, 
+import {
+  CheckCircle,
+  X,
+  Clock,
+  User,
+  UserPlus,
+  UtensilsCrossed,
+  Eye,
   Loader2,
   AlertCircle,
   RefreshCcw
 } from 'lucide-react';
-import { useCommandesEnAttente } from '../hooks/useSupabaseQuery';
+import { useCommandesEnAttente, useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { useValidateCommande } from '../hooks/useSupabaseMutation';
 import { useRealtimeSubscription } from '../hooks/useRealtimeSubscription';
+import { supabase } from '../config/supabase';
+import { useAuthStore } from '../store/authStore';
 import type { CommandeWithDetails } from '../types/database.types';
 import { formatPrice, formatDate } from '../lib/utils';
 
@@ -25,6 +28,56 @@ export default function ValidationScreen() {
   // Synchronisation temps réel pour les commandes et les items
   useRealtimeSubscription('commandes', '*');
   useRealtimeSubscription('commande_items', '*');
+
+  // Auth store pour récupérer l'établissement
+  const { profile } = useAuthStore();
+
+  // État pour suivre le client sélectionné par commande
+  const [clientSelections, setClientSelections] = useState<Record<string, string>>({});
+
+  // Charger la liste des clients actifs
+  const { data: clients } = useSupabaseQuery<{ id: string; nom: string; prenom: string }[]>(
+    ['clients_active', profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, nom, prenom')
+        .eq('etablissement_id', profile.etablissement_id)
+        .eq('actif', true)
+        .order('nom');
+      return { data, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  // Synchroniser les client_ids existants des commandes chargées
+  const [clientSynced, setClientSynced] = useState(false);
+  if (!clientSynced && commandes && commandes.length > 0) {
+    const existing: Record<string, string> = {};
+    for (const cmd of commandes) {
+      if (cmd.client_id) {
+        existing[cmd.id] = cmd.client_id;
+      }
+    }
+    if (Object.keys(existing).length > 0) {
+      setClientSelections(existing);
+    }
+    setClientSynced(true);
+  }
+
+  // Trouver un client par son ID
+  const getClientName = (clientId: string | null | undefined): string => {
+    if (!clientId || !clients) return '';
+    const client = clients.find(c => c.id === clientId);
+    return client ? `${client.prenom} ${client.nom}` : '';
+  };
+
+  // Mettre à jour le client_id d'une commande
+  const handleAssignClient = async (commandeId: string, clientId: string) => {
+    setClientSelections(prev => ({ ...prev, [commandeId]: clientId }));
+    await supabase.from('commandes').update({ client_id: clientId || null }).eq('id', commandeId);
+  };
 
   const handleValidate = (commandeId: string) => {
     setError('');
@@ -52,7 +105,7 @@ export default function ValidationScreen() {
   return (
     <div className="p-4 md:p-6 pb-24 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="max-w-7xl mx-auto space-y-6">
-        
+
         {/* Header & Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="col-span-1 md:col-span-2 lg:col-span-2">
@@ -60,7 +113,7 @@ export default function ValidationScreen() {
               <h1 className="text-3xl font-display font-bold text-primary dark:text-white">
                 Validations
               </h1>
-              <button 
+              <button
                 onClick={() => refetch()}
                 disabled={isRefetching}
                 className={`p-2 rounded-lg bg-white/50 dark:bg-neutral-800/50 border border-white/20 dark:border-white/5 text-primary dark:text-white hover:bg-white dark:hover:bg-neutral-800 transition-all duration-200 ${isRefetching ? 'animate-spin' : 'hover:rotate-180'}`}
@@ -73,7 +126,7 @@ export default function ValidationScreen() {
               Gérez les commandes en attente de validation
             </p>
           </div>
-          
+
           <div className="bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl rounded-2xl p-4 border border-white/20 dark:border-white/5 shadow-soft flex items-center justify-between group hover:shadow-glow transition-all duration-300">
             <div>
               <p className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">En attente</p>
@@ -123,8 +176,13 @@ export default function ValidationScreen() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {commandes?.map((commande) => (
-              <div 
+            {commandes?.map((commande) => {
+              // Déterminer le client_id effectif (sélection locale ou valeur existante)
+              const effectiveClientId = clientSelections[commande.id] ?? commande.client_id;
+              const clientName = getClientName(effectiveClientId);
+
+              return (
+              <div
                 key={commande.id}
                 className="group bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl rounded-2xl border border-white/20 dark:border-white/5 shadow-sm hover:shadow-glow hover:-translate-y-1 transition-all duration-300 relative overflow-hidden flex flex-col"
               >
@@ -151,9 +209,16 @@ export default function ValidationScreen() {
                           {formatDate(commande.date_creation)}
                         </span>
                       </div>
+                      {/* Indicateur client assigné */}
+                      {clientName && (
+                        <div className="flex items-center gap-1 mt-1 text-xs text-semantic-green font-medium">
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>{clientName}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  
+
                   <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-semantic-amber/10 text-semantic-amber border border-semantic-amber/20 shadow-sm">
                     {commande.statut}
                   </span>
@@ -184,12 +249,27 @@ export default function ValidationScreen() {
                         ID: {commande.id.substring(0, 8)}...
                       </div>
                     )}
-                    
+
                     {commande.commande_items && commande.commande_items.length > 3 && (
                       <p className="text-xs text-primary dark:text-blue-400 italic pt-1 pl-8 font-medium">
                         +{commande.commande_items.length - 3} autres articles...
                       </p>
                     )}
+                  </div>
+
+                  {/* Sélecteur de client */}
+                  <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-white/10">
+                    <label className="text-xs text-neutral-500 mb-1 block">Client :</label>
+                    <select
+                      value={clientSelections[commande.id] ?? commande.client_id ?? ''}
+                      onChange={(e) => handleAssignClient(commande.id, e.target.value)}
+                      className="w-full px-3 py-2 bg-neutral-100 dark:bg-white/5 border border-neutral-200 dark:border-white/10 rounded-lg text-sm text-neutral-900 dark:text-white outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Aucun client</option>
+                      {clients?.map(c => (
+                        <option key={c.id} value={c.id}>{c.prenom} {c.nom}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
@@ -221,7 +301,7 @@ export default function ValidationScreen() {
                   </div>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>
@@ -232,18 +312,18 @@ export default function ValidationScreen() {
           <div className="bg-white dark:bg-neutral-800 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-4 border-b border-neutral-100 dark:border-neutral-700 flex justify-between items-center bg-neutral-50 dark:bg-neutral-800/50">
               <h3 className="font-bold text-lg text-primary dark:text-white">Détails de la commande</h3>
-              <button 
+              <button
                 onClick={() => setSelectedCommande(null)}
                 className="p-2 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-full transition-colors"
               >
                 <X className="w-5 h-5 text-neutral-500" />
               </button>
             </div>
-            
+
             <div className="p-6 max-h-[70vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <p className="text-sm text-neutral-500 dark:text-neutral-400">Client</p>
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400">Serveuse</p>
                   <p className="font-bold text-primary dark:text-white text-lg">
                     {selectedCommande.profiles.prenom} {selectedCommande.profiles.nom}
                   </p>
@@ -255,6 +335,16 @@ export default function ValidationScreen() {
                   </p>
                 </div>
               </div>
+
+              {/* Client assigné dans la modale */}
+              {getClientName(clientSelections[selectedCommande.id] ?? selectedCommande.client_id) && (
+                <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-semantic-green/5 border border-semantic-green/10 rounded-xl">
+                  <span>🧑</span>
+                  <span className="text-sm font-medium text-semantic-green">
+                    Client : {getClientName(clientSelections[selectedCommande.id] ?? selectedCommande.client_id)}
+                  </span>
+                </div>
+              )}
 
               <div className="space-y-4">
                 <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 border-b border-neutral-100 dark:border-neutral-700 pb-2">
