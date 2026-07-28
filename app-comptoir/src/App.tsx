@@ -13,6 +13,7 @@ import StockScreen from './screens/StockScreen';
 import { RetoursScreen } from './screens/RetoursScreen';
 import { EchangesScreen } from './screens/EchangesScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
+import { CaisseScreen } from './screens/CaisseScreen';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -118,6 +119,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <StockScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/caisse"
+            element={
+              <ProtectedRoute>
+                <CaisseScreen />
               </ProtectedRoute>
             }
           />

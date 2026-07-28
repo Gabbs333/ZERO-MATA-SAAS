@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -81,6 +82,7 @@ interface PendingReturnGroup {
 
 export function RetoursScreen() {
   const profile = useAuthStore((state) => state.profile);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('week');
   const [activeTab, setActiveTab] = useState<'history' | 'pending'>('history');
@@ -104,7 +106,7 @@ export function RetoursScreen() {
           commandes (
             numero_commande,
             tables (numero),
-            profiles!commandes_serveuse_id_fkey (nom, prenom)
+            profiles!serveuse_id (nom, prenom)
           )
         `)
         .eq('etablissement_id', profile.etablissement_id)
@@ -206,6 +208,9 @@ export function RetoursScreen() {
 
       alert('Retour validé avec succès !');
       refetchPending();
+      queryClient.invalidateQueries({ queryKey: ['retours'] });
+      queryClient.invalidateQueries({ queryKey: ['factures'] });
+      queryClient.invalidateQueries({ queryKey: ['stocks'] });
     } catch (error: any) {
       console.error('Validation error:', error);
       alert(error.message || 'Erreur lors de la validation du retour');
@@ -229,6 +234,7 @@ export function RetoursScreen() {
 
       alert('Retour refusé avec succès !');
       refetchPending();
+      queryClient.invalidateQueries({ queryKey: ['retours'] });
     } catch (error: any) {
       console.error('Rejection error:', error);
       alert(error.message || 'Erreur lors du refus du retour');

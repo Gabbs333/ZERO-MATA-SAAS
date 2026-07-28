@@ -20,6 +20,7 @@ import { UtilisateursScreen } from './screens/UtilisateursScreen';
 import { TransactionsScreen } from './screens/TransactionsScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
+import { CaisseScreen } from './screens/CaisseScreen';
 import { UserProfileScreen } from './screens/UserProfileScreen';
 import { SystemActivityScreen } from './screens/SystemActivityScreen';
 
@@ -208,6 +209,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <ClientsScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/caisse"
+            element={
+              <ProtectedRoute>
+                <CaisseScreen />
               </ProtectedRoute>
             }
           />

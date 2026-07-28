@@ -517,59 +517,88 @@ export function EchangesScreen() {
               />
             </div>
 
-            {/* Résumé et soumission */}
-            {itemsARetourner.length > 0 && itemsAAjouter.length > 0 && (
-              <div className="bg-white dark:bg-neutral-800/40 backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
-                <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-4">Résumé de l'échange</h3>
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-neutral-500">Montant retourné</span>
-                    <span className="text-semantic-red font-bold">− {formatPrice(totalRetourne)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-neutral-500">Montant ajouté</span>
-                    <span className="text-green-600 font-bold">+ {formatPrice(totalAjoute)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm pt-2 border-t border-neutral-200 dark:border-white/10">
-                    <span className="font-bold text-neutral-700 dark:text-neutral-300">Différence</span>
-                    <span className={`font-bold text-lg ${
-                      difference > 0 ? 'text-semantic-red' : difference < 0 ? 'text-green-600' : 'text-neutral-600'
-                    }`}>
-                      {difference > 0 ? '+' : ''}{formatPrice(difference)}
-                    </span>
-                  </div>
-                  {difference > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
-                      <AlertCircle className="w-4 h-4" />
-                      Le client devra payer {formatPrice(difference)} supplémentaires.
-                    </p>
-                  )}
-                  {difference < 0 && (
-                    <p className="text-xs text-green-600 dark:text-green-400 mt-2 flex items-center gap-1">
-                      <RefreshCw className="w-4 h-4" />
-                      Un remboursement de {formatPrice(Math.abs(difference))} sera effectué.
-                    </p>
-                  )}
+            {/* Résumé et soumission — toujours visible */}
+            <div className="bg-white dark:bg-neutral-800/40 backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-6">
+              <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-4">Résumé de l'échange</h3>
+              
+              {itemsARetourner.length === 0 && itemsAAjouter.length === 0 ? (
+                <div className="text-center py-4 text-neutral-400 dark:text-neutral-500 text-sm space-y-2">
+                  <RefreshCw className="w-8 h-8 mx-auto opacity-30" />
+                  <p>Sélectionnez les articles à retourner et les produits de remplacement pour voir le résumé.</p>
                 </div>
-                <button
-                  onClick={handleProcessEchange}
-                  disabled={isProcessing}
-                  className="w-full py-4 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isProcessing ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                      Traitement en cours...
-                    </>
-                  ) : (
-                    <>
-                      <ArrowRightLeft className="w-5 h-5" />
-                      Confirmer l'échange
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
+              ) : (
+                <>
+                  <div className="space-y-2 mb-4">
+                    {itemsARetourner.length > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-neutral-500">Montant retourné</span>
+                        <span className="text-semantic-red font-bold">− {formatPrice(totalRetourne)}</span>
+                      </div>
+                    )}
+                    {itemsAAjouter.length > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-neutral-500">Montant ajouté</span>
+                        <span className="text-green-600 font-bold">+ {formatPrice(totalAjoute)}</span>
+                      </div>
+                    )}
+                    {itemsARetourner.length > 0 && itemsAAjouter.length > 0 && (
+                      <div className="flex justify-between text-sm pt-2 border-t border-neutral-200 dark:border-white/10">
+                        <span className="font-bold text-neutral-700 dark:text-neutral-300">Différence</span>
+                        <span className={`font-bold text-lg ${
+                          difference > 0 ? 'text-semantic-red' : difference < 0 ? 'text-green-600' : 'text-neutral-600'
+                        }`}>
+                          {difference > 0 ? '+' : ''}{formatPrice(difference)}
+                        </span>
+                      </div>
+                    )}
+                    {difference > 0 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        Le client devra payer {formatPrice(difference)} supplémentaires.
+                      </p>
+                    )}
+                    {difference < 0 && (
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-2 flex items-center gap-1">
+                        <RefreshCw className="w-4 h-4" />
+                        Un remboursement de {formatPrice(Math.abs(difference))} sera effectué.
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Indications de ce qui manque */}
+              {itemsARetourner.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mb-3 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  Sélectionnez au moins un article à retourner (colonne de gauche).
+                </p>
+              )}
+              {itemsAAjouter.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mb-3 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  Ajoutez au moins un produit en remplacement (colonne de droite).
+                </p>
+              )}
+
+              <button
+                onClick={handleProcessEchange}
+                disabled={isProcessing || itemsARetourner.length === 0 || itemsAAjouter.length === 0}
+                className="w-full py-4 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isProcessing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                    Traitement en cours...
+                  </>
+                ) : (
+                  <>
+                    <ArrowRightLeft className="w-5 h-5" />
+                    Confirmer l'échange
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         ) : (
           /* ─── Liste des factures ─── */

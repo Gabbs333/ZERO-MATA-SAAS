@@ -1068,7 +1068,7 @@ export function DashboardScreen() {
 
                     <div className="flex gap-2 pl-12">
                       <button
-                        onClick={() => validateRetour.mutate(retour.id)}
+                        onClick={() => validateRetour.mutate(retour.facture_id)}
                         disabled={validateRetour.isPending}
                         className="flex-1 h-9 rounded-lg bg-green-500/10 text-green-600 dark:text-green-400 font-bold text-xs hover:bg-green-500/20 transition-colors flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
                       >
@@ -1083,7 +1083,7 @@ export function DashboardScreen() {
                         onClick={() => {
                           const motif = prompt('Motif du refus:');
                           if (motif) {
-                            rejectRetour.mutate({ retourId: retour.id, motifRefus: motif });
+                            rejectRetour.mutate(retour.facture_id);
                           }
                         }}
                         disabled={rejectRetour.isPending}

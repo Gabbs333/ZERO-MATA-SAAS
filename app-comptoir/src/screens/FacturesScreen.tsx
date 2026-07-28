@@ -28,7 +28,8 @@ import {
   AlertCircle,
   Square,
   CheckSquare,
-  Users
+  Users,
+  ChevronDown
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { startOfDay, startOfWeek, startOfMonth, endOfDay } from 'date-fns';
@@ -63,6 +64,7 @@ export default function FacturesScreen() {
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [showAlertsDetails, setShowAlertsDetails] = useState(false);
 
   const getStartDate = (filter: TimeFilter) => {
     const now = new Date();
@@ -559,10 +561,45 @@ export default function FacturesScreen() {
       </div>
 
       {alertes && alertes.length > 0 && (
-        <div className="bg-semantic-red/10 border border-semantic-red/20 backdrop-blur-sm rounded-xl p-4 flex items-center gap-3 text-semantic-red animate-pulse shadow-glow-error">
+        <>
+        <button onClick={() => setShowAlertsDetails(!showAlertsDetails)} className="w-full bg-semantic-red/10 border border-semantic-red/20 backdrop-blur-sm rounded-xl p-4 flex items-center gap-3 text-semantic-red hover:bg-semantic-red/20 transition-colors shadow-glow-error cursor-pointer text-left">
           <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-          <p className="font-bold">{alertes.length} facture(s) impayée(s) depuis plus de 24h !</p>
-        </div>
+          <p className="font-bold flex-1">{alertes.length} facture(s) impayée(s) depuis plus de 24h !</p>
+          <ChevronDown className={`w-5 h-5 transition-transform ${showAlertsDetails ? 'rotate-180' : ''}`} />
+        </button>
+        {showAlertsDetails && (
+          <div className="mt-2 bg-white dark:bg-neutral-900/90 backdrop-blur-md rounded-xl border border-semantic-red/20 overflow-hidden">
+            {alertes.map((alerte: any) => {
+              const montantPaye = (alerte.montant_total || 0) - (alerte.montant_restant || 0);
+              const fullFacture = factures?.find(f => f.id === alerte.id);
+              return (
+                <button
+                  key={alerte.id}
+                  onClick={() => {
+                    if (fullFacture) {
+                      handleOpenEncaissement(fullFacture);
+                    } else {
+                      const minimalFacture = { ...alerte, montant_paye: montantPaye, commandes: { numero_commande: '', tables: { numero: 0 }, profiles: { nom: '', prenom: '' }, commande_items: [] }, encaissements: [] } as FactureWithDetails;
+                      handleOpenEncaissement(minimalFacture);
+                    }
+                    setShowAlertsDetails(false);
+                  }}
+                  className="w-full p-4 flex items-center justify-between hover:bg-semantic-red/5 transition-colors border-b border-neutral-200 dark:border-white/5 last:border-b-0 text-left"
+                >
+                  <div>
+                    <p className="font-bold text-sm text-neutral-900 dark:text-white">{alerte.numero_facture}</p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{formatDate(alerte.date_generation)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-sm text-semantic-red">{formatPrice(alerte.montant_restant || 0)}</p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">restant</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        </>
       )}
 
       {/* Tabs Pill Style */}
