@@ -41,7 +41,7 @@ export function useTables() {
   );
 }
 
-// Hook spécifique pour récupérer les produits disponibles d'un établissement
+// Hook spécifique pour récupérer les produits disponibles d'un établissement (boissons en stock + nourriture illimitée)
 export function useProduitsDisponibles() {
   const { user } = useAuthStore();
   const etablissementId = user?.etablissement_id;
@@ -51,24 +51,46 @@ export function useProduitsDisponibles() {
     async (supabase) => {
       if (!etablissementId) return { data: [], error: null };
 
-      const { data, error } = await supabase
+      // 1. Récupérer les stocks des boissons et autres articles gérés en stock (> 0)
+      const { data: stockData, error: stockError } = await supabase
         .from('stocks')
         .select('*, produits!inner(*)')
         .eq('etablissement_id', etablissementId)
-        .gt('quantite_actuelle', 0)
-        .order('produits(nom)', { ascending: true });
+        .gt('quantite_actuelle', 0);
 
-      if (error) return { data: null, error };
+      if (stockError) return { data: null, error: stockError };
 
-      // Transformer les données pour correspondre à ProduitAvecStock
-      const formattedData = data.map((item: any) => ({
+      // 2. Récupérer tous les plats de nourriture (qui ne nécessitent pas de stock)
+      const { data: nourritureData, error: nourritureError } = await supabase
+        .from('produits')
+        .select('*')
+        .eq('etablissement_id', etablissementId)
+        .eq('categorie', 'nourriture');
+
+      if (nourritureError) return { data: null, error: nourritureError };
+
+      // Transformer les stocks en ProduitAvecStock
+      const formattedStocks = (stockData || []).map((item: any) => ({
         ...item.produits,
         stock: {
           quantite_disponible: item.quantite_actuelle
         }
       }));
 
-      return { data: formattedData, error: null };
+      // Transformer la nourriture avec un stock fictif illimité/disponible
+      const formattedNourriture = (nourritureData || []).map((produit: any) => ({
+        ...produit,
+        stock: {
+          quantite_disponible: 9999 // Illimité pour la cuisine
+        }
+      }));
+
+      // Fusionner les deux listes et trier par nom
+      const combined = [...formattedStocks, ...formattedNourriture].sort((a, b) => 
+        a.nom.localeCompare(b.nom)
+      );
+
+      return { data: combined, error: null };
     },
     { enabled: !!etablissementId }
   );

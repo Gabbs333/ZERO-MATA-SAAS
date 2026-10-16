@@ -56,7 +56,76 @@ export function ProduitsScreen() {
   const [isApplyingGlobal, setIsApplyingGlobal] = useState(false);
   const [globalMessage, setGlobalMessage] = useState<string | null>(null);
 
-  const { data: produits, isPending: isLoading, refetch } = useSupabaseQuery<Produit[]>(
+  // État pour la gestion des tarifs spécifiques (Happy Hours / Saisons)
+  const [isTarifsModalOpen, setIsTarifsModalOpen] = useState(false);
+  const [selectedProductForTarifs, setSelectedProductForTarifs] = useState<Produit | null>(null);
+  const [tarifsList, setTarifsList] = useState<any[]>([]);
+  const [isFetchingTarifs, setIsFetchingTarifs] = useState(false);
+
+  // Formulaire nouveau tarif
+  const [tarifForm, setTarifForm] = useState({
+    nom_tarif: '',
+    prix_vente: '',
+    jours_semaine: [] as number[],
+    heure_debut: '',
+    heure_fin: '',
+    priorite: 0
+  });
+
+  const handleOpenTarifsModal = async (product: Produit) => {
+    setSelectedProductForTarifs(product);
+    setIsTarifsModalOpen(true);
+    fetchTarifs(product.id);
+  };
+
+  const fetchTarifs = async (produitId: string) => {
+    setIsFetchingTarifs(true);
+    const { data, error } = await supabase
+      .from('tarifs_specifiques')
+      .select('*')
+      .eq('produit_id', produitId)
+      .order('priorite', { ascending: false });
+    if (!error && data) {
+      setTarifsList(data);
+    }
+    setIsFetchingTarifs(false);
+  };
+
+  const handleAddTarif = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductForTarifs || !profile?.etablissement_id) return;
+
+    try {
+      const { error } = await supabase.from('tarifs_specifiques').insert({
+        etablissement_id: profile.etablissement_id,
+        produit_id: selectedProductForTarifs.id,
+        nom_tarif: tarifForm.nom_tarif,
+        prix_vente: Number(tarifForm.prix_vente),
+        jours_semaine: tarifForm.jours_semaine.length > 0 ? tarifForm.jours_semaine : null,
+        heure_debut: tarifForm.heure_debut || null,
+        heure_fin: tarifForm.heure_fin || null,
+        priorite: Number(tarifForm.priorite),
+        actif: true
+      });
+
+      if (error) throw error;
+
+      // Reset form & refresh
+      setTarifForm({ nom_tarif: '', prix_vente: '', jours_semaine: [], heure_debut: '', heure_fin: '', priorite: 0 });
+      fetchTarifs(selectedProductForTarifs.id);
+    } catch (err: any) {
+      console.error('Error adding tarif:', err);
+      alert('Erreur lors de l\'ajout du tarif : ' + err.message);
+    }
+  };
+
+  const handleDeleteTarif = async (tarifId: string) => {
+    if (!confirm('Voulez-vous supprimer cette règle tarifaire ?')) return;
+    const { error } = await supabase.from('tarifs_specifiques').delete().eq('id', tarifId);
+    if (!error && selectedProductForTarifs) {
+      fetchTarifs(selectedProductForTarifs.id);
+    }
+  };
     ['produits', profile?.etablissement_id],
     async () => {
       if (!profile?.etablissement_id) return { data: [] as Produit[], error: null };
@@ -491,6 +560,13 @@ export function ProduitsScreen() {
 
                     <div className="flex items-center gap-2">
                         <button
+                            onClick={() => handleOpenTarifsModal(product)}
+                            className="text-neutral-400 hover:text-amber-500 transition-colors"
+                            title="Gérer les tarifs dynamiques (Happy Hours, Week-end...)"
+                        >
+                            <span className="text-xs font-bold px-1.5 py-0.5 bg-amber-500/10 text-amber-600 rounded">⏱️ Tarif</span>
+                        </button>
+                        <button
                             onClick={() => handleOpenModal(product)}
                             className="text-neutral-400 hover:text-primary dark:hover:text-white transition-colors"
                             title="Modifier"
@@ -655,6 +731,166 @@ export function ProduitsScreen() {
                     <div className="relative">
                       <div className="w-full pl-4 pr-12 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white font-bold">
                         {formData.prix_achat > 0 ? `${formData.prix_achat.toLocaleString()} XAF` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Modal Tarifs Spécifiques / Happy Hours */}
+                {isTarifsModalOpen && selectedProductForTarifs && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+                    <div className="bg-white dark:bg-dark-card/95 rounded-2xl w-full max-w-2xl shadow-2xl border border-neutral-200 dark:border-white/5 overflow-hidden max-h-[90vh] flex flex-col">
+                      <div className="p-4 md:p-6 border-b border-neutral-100 dark:border-white/5 flex justify-between items-center">
+                        <div>
+                          <h2 className="text-xl font-bold text-primary dark:text-white font-display">
+                            Gestion des Tarifs Contextuels
+                          </h2>
+                          <p className="text-xs text-neutral-500">Produit : <span className="font-bold text-primary dark:text-white">{selectedProductForTarifs.nom}</span> (Prix standard : {formatMontant(selectedProductForTarifs.prix_vente)})</p>
+                        </div>
+                        <button
+                          onClick={() => setIsTarifsModalOpen(false)}
+                          className="text-neutral-400 hover:text-primary dark:hover:text-white transition-colors"
+                        >
+                          <X className="w-6 h-6" />
+                        </button>
+                      </div>
+
+                      <div className="p-4 md:p-6 overflow-y-auto space-y-6 flex-1">
+                        {/* Formulaire ajout */}
+                        <form onSubmit={handleAddTarif} className="bg-neutral-50 dark:bg-dark-card/40 p-4 rounded-xl border border-neutral-200 dark:border-white/5 space-y-4">
+                          <h3 className="text-sm font-bold text-primary dark:text-white">➕ Ajouter une règle tarifaire (Happy Hour, Nuit, Week-end...)</h3>
+                
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-neutral-500 mb-1">Nom du tarif (ex: Happy Hour)</label>
+                              <input
+                                type="text"
+                                required
+                                value={tarifForm.nom_tarif}
+                                onChange={e => setTarifForm({...tarifForm, nom_tarif: e.target.value})}
+                                placeholder="ex: Happy Hour Soir"
+                                className="w-full px-3 py-2 bg-white dark:bg-dark-card border rounded-lg text-sm text-primary dark:text-white outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-neutral-500 mb-1">Prix promo (FCFA)</label>
+                              <input
+                                type="number"
+                                required
+                                min="0"
+                                value={tarifForm.prix_vente}
+                                onChange={e => setTarifForm({...tarifForm, prix_vente: e.target.value})}
+                                placeholder="ex: 500"
+                                className="w-full px-3 py-2 bg-white dark:bg-dark-card border rounded-lg text-sm text-primary dark:text-white outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-neutral-500 mb-1">Heure début</label>
+                              <input
+                                type="time"
+                                value={tarifForm.heure_debut}
+                                onChange={e => setTarifForm({...tarifForm, heure_debut: e.target.value})}
+                                className="w-full px-3 py-2 bg-white dark:bg-dark-card border rounded-lg text-sm text-primary dark:text-white outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-neutral-500 mb-1">Heure fin</label>
+                              <input
+                                type="time"
+                                value={tarifForm.heure_fin}
+                                onChange={e => setTarifForm({...tarifForm, heure_fin: e.target.value})}
+                                className="w-full px-3 py-2 bg-white dark:bg-dark-card border rounded-lg text-sm text-primary dark:text-white outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-neutral-500 mb-1">Priorité (ex: 10)</label>
+                              <input
+                                type="number"
+                                value={tarifForm.priorite}
+                                onChange={e => setTarifForm({...tarifForm, priorite: Number(e.target.value)})}
+                                className="w-full px-3 py-2 bg-white dark:bg-dark-card border rounded-lg text-sm text-primary dark:text-white outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-neutral-500 mb-1">Jours de la semaine ciblés (Laisser vide pour tous les jours)</label>
+                            <div className="flex flex-wrap gap-2">
+                              {[
+                                { label: 'Lun', val: 1 },
+                                { label: 'Mar', val: 2 },
+                                { label: 'Mer', val: 3 },
+                                { label: 'Jeu', val: 4 },
+                                { label: 'Ven', val: 5 },
+                                { label: 'Sam', val: 6 },
+                                { label: 'Dim', val: 0 },
+                              ].map(day => {
+                                const isSelected = tarifForm.jours_semaine.includes(day.val);
+                                return (
+                                  <button
+                                    key={day.val}
+                                    type="button"
+                                    onClick={() => {
+                                      const current = tarifForm.jours_semaine;
+                                      const updated = isSelected ? current.filter(v => v !== day.val) : [...current, day.val];
+                                      setTarifForm({...tarifForm, jours_semaine: updated});
+                                    }}
+                                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                      isSelected ? 'bg-primary text-white' : 'bg-neutral-200 dark:bg-white/10 text-neutral-600 dark:text-neutral-300'
+                                    }`}
+                                  >
+                                    {day.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="w-full py-2.5 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold text-sm hover:opacity-90 transition-opacity"
+                          >
+                            Enregistrer cette règle tarifaire
+                          </button>
+                        </form>
+
+                        {/* Liste des règles existantes */}
+                        <div>
+                          <h3 className="text-sm font-bold text-primary dark:text-white mb-3">📋 Règles tarifaires actives pour ce produit</h3>
+                          {isFetchingTarifs ? (
+                            <p className="text-xs text-neutral-400">Chargement...</p>
+                          ) : tarifsList.length === 0 ? (
+                            <p className="text-xs text-neutral-400 italic">Aucune règle spécifique. Le prix standard s'applique en permanence.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {tarifsList.map(tarif => (
+                                <div key={tarif.id} className="p-3 bg-neutral-50 dark:bg-dark-card/20 rounded-xl border border-neutral-200 dark:border-white/5 flex items-center justify-between">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-sm text-primary dark:text-white">{tarif.nom_tarif}</span>
+                                      <span className="px-2 py-0.5 bg-green-500/10 text-green-600 rounded text-xs font-bold">{formatMontant(tarif.prix_vente)}</span>
+                                      <span className="text-xs text-neutral-400">Priorité : {tarif.priorite}</span>
+                                    </div>
+                                    <p className="text-xs text-neutral-500 mt-1">
+                                      {tarif.heure_debut && tarif.heure_fin ? `🕒 De ${tarif.heure_debut.slice(0,5)} à ${tarif.heure_fin.slice(0,5)}` : '🕒 Toute la journée'}
+                                      {tarif.jours_semaine && tarif.jours_semaine.length > 0 ? ` • Jours : [${tarif.jours_semaine.join(', ')}]` : ' • Tous les jours'}
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => handleDeleteTarif(tarif.id)}
+                                    className="text-neutral-400 hover:text-red-500 p-1 transition-colors"
+                                    title="Supprimer la règle"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

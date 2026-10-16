@@ -37,13 +37,46 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       if (data.session) {
         // Récupérer le profil utilisateur avec les détails de l'établissement
-        const { data: profile, error: profileError } = await supabase
+        let { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('*, etablissement:etablissements(*)')
           .eq('id', data.session.user.id)
-          .single();
+          .maybeSingle();
 
-        if (profileError) throw profileError;
+        // Si le profil n'existe pas encore, tenter de le créer automatiquement
+        if (!profile && !profileError) {
+          const meta = data.session.user.user_metadata || {};
+          let etabId = meta.etablissement_id;
+          
+          if (!etabId) {
+            const { data: etab } = await supabase.from('etablissements').select('id').limit(1).maybeSingle();
+            etabId = etab?.id;
+          }
+
+          if (etabId) {
+            await supabase.from('profiles').upsert({
+              id: data.session.user.id,
+              nom: meta.nom || 'Non renseigné',
+              prenom: meta.prenom || 'Non renseigné',
+              role: meta.role || 'serveuse',
+              etablissement_id: etabId,
+              actif: true,
+            });
+
+            const { data: reFetched } = await supabase
+              .from('profiles')
+              .select('*, etablissement:etablissements(*)')
+              .eq('id', data.session.user.id)
+              .maybeSingle();
+
+            profile = reFetched;
+          }
+        }
+
+        if (profileError || !profile) {
+          await supabase.auth.signOut();
+          throw new Error('Impossible de charger votre profil. Contactez votre gérant.');
+        }
 
         // Vérifier que l'utilisateur est une serveuse
         if (profile.role !== 'serveuse') {
@@ -107,11 +140,40 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       if (session?.user) {
         // Fetch profile with error handling
-        const { data: profile, error: profileError } = await supabase
+        let { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('*, etablissement:etablissements(*)')
           .eq('id', session.user.id)
-          .single();
+          .maybeSingle();
+          
+        if (!profile && !profileError) {
+          const meta = session.user.user_metadata || {};
+          let etabId = meta.etablissement_id;
+          
+          if (!etabId) {
+            const { data: etab } = await supabase.from('etablissements').select('id').limit(1).maybeSingle();
+            etabId = etab?.id;
+          }
+
+          if (etabId) {
+            await supabase.from('profiles').upsert({
+              id: session.user.id,
+              nom: meta.nom || 'Non renseigné',
+              prenom: meta.prenom || 'Non renseigné',
+              role: meta.role || 'serveuse',
+              etablissement_id: etabId,
+              actif: true,
+            });
+
+            const { data: reFetched } = await supabase
+              .from('profiles')
+              .select('*, etablissement:etablissements(*)')
+              .eq('id', session.user.id)
+              .maybeSingle();
+
+            profile = reFetched;
+          }
+        }
           
         if (profileError) {
           console.error('Error fetching profile:', profileError);
