@@ -901,7 +901,8 @@ export function ProduitsScreen() {
                           </div>
 
                           <button
-                            type="submit"
+                            type="button"
+                            onClick={handleAddTarif}
                             className="w-full py-2.5 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold text-sm hover:opacity-90 transition-opacity"
                           >
                             Enregistrer cette règle tarifaire
