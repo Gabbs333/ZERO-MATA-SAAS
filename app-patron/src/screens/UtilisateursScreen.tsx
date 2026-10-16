@@ -464,16 +464,25 @@ export function UtilisateursScreen() {
                   {/* Section Performances de l'employé */}
                   {user.role === 'serveuse' && (() => {
                     const stats = serveursMap.get(user.id);
+                    const impayes = stats?.montant_impayes || 0;
                     return (
-                      <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-white/5 grid grid-cols-2 gap-3 bg-neutral-50 dark:bg-white/5 p-3 rounded-xl">
-                        <div>
-                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Commandes</p>
-                          <p className="text-base font-black text-primary dark:text-white mt-0.5">{stats?.nombre_commandes || 0}</p>
+                      <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-white/5 space-y-3 bg-neutral-50 dark:bg-white/5 p-3 rounded-xl">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Commandes</p>
+                            <p className="text-base font-black text-primary dark:text-white mt-0.5">{stats?.nombre_commandes || 0}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Chiffre d'Affaires</p>
+                            <p className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{formatMontant(stats?.chiffre_affaires || 0)}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Chiffre d'Affaires</p>
-                          <p className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{formatMontant(stats?.chiffre_affaires || 0)}</p>
-                        </div>
+                        {impayes > 0 && (
+                          <div className="pt-2 border-t border-neutral-200/50 dark:border-white/5 flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-semantic-red uppercase tracking-wider">⚠️ Impayés / Non versé</span>
+                            <span className="text-sm font-black text-semantic-red">{formatMontant(impayes)}</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
