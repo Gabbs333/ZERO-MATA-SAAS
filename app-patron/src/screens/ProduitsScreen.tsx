@@ -100,11 +100,13 @@ export function ProduitsScreen() {
 
   const fetchTarifs = async (produitId: string) => {
     setIsFetchingTarifs(true);
+    console.log('Fetching tarifs for product:', produitId);
     const { data, error } = await supabase
       .from('tarifs_specifiques')
       .select('*')
       .eq('produit_id', produitId)
       .order('priorite', { ascending: false });
+    console.log('Fetch tarifs result:', { data, error });
     if (!error && data) {
       setTarifsList(data);
     } else {
@@ -118,7 +120,14 @@ export function ProduitsScreen() {
     if (!selectedProductForTarifs || !profile?.etablissement_id) return;
 
     try {
-      const { error } = await supabase.from('tarifs_specifiques').insert({
+      console.log('Attempting to insert tarif:', {
+        etablissement_id: profile.etablissement_id,
+        produit_id: selectedProductForTarifs.id,
+        nom_tarif: tarifForm.nom_tarif,
+        prix_vente: Number(tarifForm.prix_vente),
+      });
+
+      const { data, error } = await supabase.from('tarifs_specifiques').insert({
         etablissement_id: profile.etablissement_id,
         produit_id: selectedProductForTarifs.id,
         nom_tarif: tarifForm.nom_tarif,
@@ -128,7 +137,9 @@ export function ProduitsScreen() {
         heure_fin: tarifForm.heure_fin || null,
         priorite: Number(tarifForm.priorite),
         actif: true
-      });
+      }).select();
+
+      console.log('Insert tarif response:', { data, error });
 
       if (error) throw error;
 
@@ -142,7 +153,7 @@ export function ProduitsScreen() {
         [selectedProductForTarifs.id]: (prev[selectedProductForTarifs.id] || 0) + 1
       }));
     } catch (err: any) {
-      console.error('Error adding tarif:', err);
+      console.error('Error adding tarif exception:', err);
       alert('Erreur lors de l\'ajout du tarif : ' + err.message);
     }
   };
