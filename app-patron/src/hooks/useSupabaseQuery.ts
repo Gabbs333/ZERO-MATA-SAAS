@@ -220,7 +220,7 @@ export function useRetoursEnAttente() {
           commandes (
             numero_commande,
             tables (numero),
-            profiles (nom, prenom)
+            profiles!serveuse_id (nom, prenom)
           ),
           profiles (nom, prenom)
         `)

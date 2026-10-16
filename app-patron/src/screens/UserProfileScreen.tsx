@@ -5,6 +5,7 @@ import { User, Lock, Save } from 'lucide-react';
 
 export function UserProfileScreen() {
   const { profile, user, initialize } = useAuthStore();
+  const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
 
   const handleResetComptabilite = async () => {
