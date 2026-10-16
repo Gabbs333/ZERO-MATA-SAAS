@@ -61,6 +61,7 @@ export function ProduitsScreen() {
   const [selectedProductForTarifs, setSelectedProductForTarifs] = useState<Produit | null>(null);
   const [tarifsList, setTarifsList] = useState<any[]>([]);
   const [isFetchingTarifs, setIsFetchingTarifs] = useState(false);
+  const [produitsAvecTarifs, setProduitsAvecTarifs] = useState<Record<string, number>>({});
 
   // Formulaire nouveau tarif
   const [tarifForm, setTarifForm] = useState({
@@ -72,10 +73,29 @@ export function ProduitsScreen() {
     priorite: 0
   });
 
+  // Charger les compteurs de tarifs par produit
+  useEffect(() => {
+    if (!profile?.etablissement_id) return;
+    supabase
+      .from('tarifs_specifiques')
+      .select('produit_id')
+      .eq('etablissement_id', profile.etablissement_id)
+      .eq('actif', true)
+      .then(({ data }) => {
+        if (data) {
+          const counts: Record<string, number> = {};
+          data.forEach((t: any) => {
+            counts[t.produit_id] = (counts[t.produit_id] || 0) + 1;
+          });
+          setProduitsAvecTarifs(counts);
+        }
+      });
+  }, [profile?.etablissement_id, isTarifsModalOpen]);
+
   const handleOpenTarifsModal = async (product: Produit) => {
     setSelectedProductForTarifs(product);
     setIsTarifsModalOpen(true);
-    fetchTarifs(product.id);
+    await fetchTarifs(product.id);
   };
 
   const fetchTarifs = async (produitId: string) => {
@@ -87,6 +107,8 @@ export function ProduitsScreen() {
       .order('priorite', { ascending: false });
     if (!error && data) {
       setTarifsList(data);
+    } else {
+      setTarifsList([]);
     }
     setIsFetchingTarifs(false);
   };
@@ -110,9 +132,15 @@ export function ProduitsScreen() {
 
       if (error) throw error;
 
-      // Reset form & refresh
+      // Reset form & refresh list
       setTarifForm({ nom_tarif: '', prix_vente: '', jours_semaine: [], heure_debut: '', heure_fin: '', priorite: 0 });
-      fetchTarifs(selectedProductForTarifs.id);
+      await fetchTarifs(selectedProductForTarifs.id);
+      
+      // Mettre à jour le compteur local
+      setProduitsAvecTarifs(prev => ({
+        ...prev,
+        [selectedProductForTarifs.id]: (prev[selectedProductForTarifs.id] || 0) + 1
+      }));
     } catch (err: any) {
       console.error('Error adding tarif:', err);
       alert('Erreur lors de l\'ajout du tarif : ' + err.message);
@@ -123,7 +151,11 @@ export function ProduitsScreen() {
     if (!confirm('Voulez-vous supprimer cette règle tarifaire ?')) return;
     const { error } = await supabase.from('tarifs_specifiques').delete().eq('id', tarifId);
     if (!error && selectedProductForTarifs) {
-      fetchTarifs(selectedProductForTarifs.id);
+      await fetchTarifs(selectedProductForTarifs.id);
+      setProduitsAvecTarifs(prev => {
+        const count = (prev[selectedProductForTarifs.id] || 1) - 1;
+        return { ...prev, [selectedProductForTarifs.id]: count > 0 ? count : 0 };
+      });
     }
   };
   const { data: produits, isPending: isLoading, refetch } = useSupabaseQuery<Produit[]>(
@@ -554,7 +586,14 @@ export function ProduitsScreen() {
                          <Package className="w-5 h-5" />}
                       </div>
                       <div>
-                        <h3 className="font-bold text-primary dark:text-white text-sm leading-tight">{product.nom}</h3>
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="font-bold text-primary dark:text-white text-sm leading-tight">{product.nom}</h3>
+                          {produitsAvecTarifs[product.id] > 0 && (
+                            <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded text-[9px] font-bold" title={`${produitsAvecTarifs[product.id]} tarif(s) dynamique(s) actif(s)`}>
+                              ⚡ {produitsAvecTarifs[product.id]} tarif{produitsAvecTarifs[product.id] > 1 ? 's' : ''} actif{produitsAvecTarifs[product.id] > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-neutral-500 capitalize">{product.categorie}</p>
                       </div>
                     </div>
