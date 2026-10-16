@@ -5,7 +5,28 @@ import { User, Lock, Save } from 'lucide-react';
 
 export function UserProfileScreen() {
   const { profile, user, initialize } = useAuthStore();
-  const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  const handleResetComptabilite = async () => {
+    if (!window.confirm("⚠️ Attention : Cette action va effacer toutes les transactions, factures, encaissements et historiques financiers. Le stock, les produits et les tarifs seront conservés. Voulez-vous continuer ?")) {
+      return;
+    }
+
+    setResetLoading(true);
+    setMessage(null);
+
+    try {
+      const { data, error } = await supabase.rpc('reset_comptabilite_financiere');
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: '✅ Réinitialisation financière effectuée avec succès.' });
+    } catch (err: any) {
+      console.error('Error resetting financial data:', err);
+      setMessage({ type: 'error', text: '❌ Erreur lors de la réinitialisation : ' + (err.message || 'Erreur inconnue') });
+    } finally {
+      setResetLoading(false);
+    }
+  };
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const [formData, setFormData] = useState({
@@ -159,11 +180,22 @@ export function UserProfileScreen() {
 
           {/* Security Note */}
           <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border border-neutral-200 dark:border-white/5 shadow-xl shadow-neutral-200/40 dark:shadow-none p-8">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-semantic-amber/10 rounded-lg text-semantic-amber border border-semantic-amber/20">
-                <Lock className="w-5 h-5" />
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-semantic-amber/10 rounded-lg text-semantic-amber border border-semantic-amber/20">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <h3 className="text-xl font-bold text-primary dark:text-white">Sécurité du Compte</h3>
               </div>
-              <h3 className="text-xl font-bold text-primary dark:text-white">Sécurité du Compte</h3>
+              {/* Bouton discret "Cool" pour le reset financier */}
+              <button
+                onClick={handleResetComptabilite}
+                disabled={resetLoading}
+                className="px-3 py-1 bg-transparent hover:bg-neutral-100 dark:hover:bg-white/5 text-neutral-300 hover:text-neutral-500 rounded text-xs font-mono transition-colors disabled:opacity-50"
+                title="Paramètre système"
+              >
+                {resetLoading ? '...' : 'Cool'}
+              </button>
             </div>
             
             <p className="text-neutral-600 dark:text-neutral-400 text-sm leading-relaxed">
