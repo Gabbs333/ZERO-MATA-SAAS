@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
-import { UserPlus, Search, Edit, UserX, X, Trash2 } from 'lucide-react';
+import { UserPlus, Search, Edit, UserX, X, Trash2, TrendingUp, ShoppingBag, Banknote } from 'lucide-react';
 import type { Profile } from '../types/database.types';
+import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import { formatMontant } from '../utils/format';
 
 // Get Supabase configuration
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -13,9 +15,50 @@ export function UtilisateursScreen() {
   const profile = useAuthStore((state) => state.profile);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'serveuse' | 'comptoir' | 'gerant'>('all');
+  const [perfPeriod, setPerfPeriod] = useState<'today' | 'week' | 'month'>('month');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
+
+  // Calculer les dates de début et fin selon la période
+  const dateRange = useMemo(() => {
+    const now = new Date();
+    switch (perfPeriod) {
+      case 'today':
+        return { debut: startOfDay(now).toISOString(), fin: endOfDay(now).toISOString() };
+      case 'week':
+        return { debut: startOfWeek(now, { weekStartsOn: 1 }).toISOString(), fin: endOfWeek(now, { weekStartsOn: 1 }).toISOString() };
+      case 'month':
+      default:
+        return { debut: startOfMonth(now).toISOString(), fin: endOfMonth(now).toISOString() };
+    }
+  }, [perfPeriod]);
+
+  // Récupérer les performances du personnel
+  const { data: performances } = useSupabaseQuery<any>(
+    ['performances_personnel', dateRange.debut, dateRange.fin, profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: null, error: null };
+      const { data, error } = await supabase.rpc('get_performances_personnel', {
+        p_debut: dateRange.debut,
+        p_fin: dateRange.fin
+      });
+      return { data, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  const serveursMap = useMemo(() => {
+    const map = new Map();
+    performances?.serveurs?.forEach((s: any) => map.set(s.utilisateur_id, s));
+    return map;
+  }, [performances]);
+
+  const comptoirMap = useMemo(() => {
+    const map = new Map();
+    performances?.comptoir?.forEach((c: any) => map.set(c.utilisateur_id, c));
+    return map;
+  }, [performances]);
   
   // Form State
   const [formData, setFormData] = useState({
@@ -301,8 +344,8 @@ export function UtilisateursScreen() {
         </div>
 
         {/* Filters */}
-        <div className="mt-6 flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
+        <div className="mt-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div className="relative flex-1 w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
                 <input 
                     type="text" 
@@ -312,20 +355,42 @@ export function UtilisateursScreen() {
                     className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-primary dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
                 />
             </div>
-            <div className="flex p-1 bg-neutral-100 dark:bg-white/5 rounded-xl overflow-x-auto border border-neutral-200 dark:border-white/5">
-                {(['all', 'serveuse', 'comptoir', 'gerant'] as const).map((role) => (
-                    <button 
-                        key={role}
-                        onClick={() => setRoleFilter(role)}
-                        className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all whitespace-nowrap capitalize ${
-                            roleFilter === role
-                                ? 'bg-white dark:bg-dark-accent text-primary dark:text-white shadow-md' 
-                                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
-                        }`}
-                    >
-                        {role === 'all' ? 'Tous les Rôles' : role}
-                    </button>
+            
+            <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+              {/* Sélecteur de période de performance */}
+              <div className="flex p-1 bg-neutral-100 dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5">
+                {[
+                  { label: "Aujourd'hui", val: 'today' },
+                  { label: 'Semaine', val: 'week' },
+                  { label: 'Mois', val: 'month' },
+                ].map(p => (
+                  <button
+                    key={p.val}
+                    onClick={() => setPerfPeriod(p.val as any)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                      perfPeriod === p.val ? 'bg-primary text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
                 ))}
+              </div>
+
+              <div className="flex p-1 bg-neutral-100 dark:bg-white/5 rounded-xl overflow-x-auto border border-neutral-200 dark:border-white/5">
+                  {(['all', 'serveuse', 'comptoir', 'gerant'] as const).map((role) => (
+                      <button 
+                          key={role}
+                          onClick={() => setRoleFilter(role)}
+                          className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all whitespace-nowrap capitalize ${
+                              roleFilter === role
+                                  ? 'bg-white dark:bg-dark-accent text-primary dark:text-white shadow-md' 
+                                  : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
+                          }`}
+                      >
+                          {role === 'all' ? 'Tous' : role}
+                      </button>
+                  ))}
+              </div>
             </div>
         </div>
       </div>
@@ -383,10 +448,10 @@ export function UtilisateursScreen() {
                       </div>
                    </div>
 
-                  <div className="flex gap-2 mt-6">
+	                  <div className="flex gap-2 mt-6">
                      <button 
                         onClick={() => toggleUserStatus(user)}
-                        className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${
+                        className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${
                             user.actif 
                                 ? 'border-red-200 text-red-600 hover:bg-red-50 dark:border-red-500/20 dark:text-red-400 dark:hover:bg-red-500/10' 
                                 : 'border-green-200 text-green-600 hover:bg-green-50 dark:border-green-500/20 dark:text-green-400 dark:hover:bg-green-500/10'
@@ -395,6 +460,39 @@ export function UtilisateursScreen() {
                         {user.actif ? 'Désactiver' : 'Activer'}
                      </button>
                   </div>
+
+                  {/* Section Performances de l'employé */}
+                  {user.role === 'serveuse' && (() => {
+                    const stats = serveursMap.get(user.id);
+                    return (
+                      <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-white/5 grid grid-cols-2 gap-3 bg-neutral-50 dark:bg-white/5 p-3 rounded-xl">
+                        <div>
+                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Commandes</p>
+                          <p className="text-base font-black text-primary dark:text-white mt-0.5">{stats?.nombre_commandes || 0}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Chiffre d'Affaires</p>
+                          <p className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{formatMontant(stats?.chiffre_affaires || 0)}</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {user.role === 'comptoir' && (() => {
+                    const stats = comptoirMap.get(user.id);
+                    return (
+                      <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-white/5 grid grid-cols-2 gap-3 bg-neutral-50 dark:bg-white/5 p-3 rounded-xl">
+                        <div>
+                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Encaissements</p>
+                          <p className="text-base font-black text-primary dark:text-white mt-0.5">{stats?.nombre_encaissements || 0}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Total Encaissé</p>
+                          <p className="text-base font-black text-blue-600 dark:text-blue-400 mt-0.5">{formatMontant(stats?.total_encaisse || 0)}</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ))}
