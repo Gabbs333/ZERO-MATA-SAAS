@@ -252,7 +252,7 @@ export default function ValidationScreen() {
                           onClick={() => setCardFilters(prev => ({ ...prev, [commande.id]: cat }))}
                           className={`flex-1 py-1 text-[11px] font-bold rounded-md transition-all capitalize ${
                             currentFilter === cat
-                              ? 'bg-white dark:bg-dark-accent text-primary dark:text-white shadow-sm'
+                              ? 'bg-primary text-white dark:bg-dark-accent dark:text-white shadow-sm'
                               : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200'
                           }`}
                         >
