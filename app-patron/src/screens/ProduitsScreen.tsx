@@ -115,9 +115,15 @@ export function ProduitsScreen() {
     setIsFetchingTarifs(false);
   };
 
-  const handleAddTarif = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProductForTarifs || !profile?.etablissement_id) return;
+  const handleAddTarif = async (e?: any) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+    console.log('handleAddTarif called successfully!', { tarifForm, selectedProductForTarifs });
+    if (!selectedProductForTarifs || !profile?.etablissement_id) {
+      console.warn('Missing product or establishment ID');
+      return;
+    }
 
     try {
       console.log('Attempting to insert tarif:', {
