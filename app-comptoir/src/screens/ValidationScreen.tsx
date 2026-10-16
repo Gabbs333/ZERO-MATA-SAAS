@@ -25,6 +25,9 @@ export default function ValidationScreen() {
   const [selectedCommande, setSelectedCommande] = useState<CommandeWithDetails | null>(null);
   const [error, setError] = useState('');
 
+  // Filtre par catégorie pour chaque carte de commande ('all' | 'boisson' | 'nourriture')
+  const [cardFilters, setCardFilters] = useState<Record<string, 'all' | 'boisson' | 'nourriture'>>({});
+
   // Synchronisation temps réel pour les commandes et les items
   useRealtimeSubscription('commandes', '*');
   useRealtimeSubscription('commande_items', '*');
@@ -239,16 +242,49 @@ export default function ValidationScreen() {
 
                 {/* Card Body */}
                 <div className="p-5 pl-7 flex-1 space-y-3">
+                  {/* Filtres de catégorie pour la carte (Tous, Boissons, Nourriture) */}
+                  <div className="flex p-0.5 bg-neutral-100 dark:bg-white/5 rounded-lg mb-2">
+                    {(['all', 'boisson', 'nourriture'] as const).map((cat) => {
+                      const currentFilter = cardFilters[commande.id] || 'all';
+                      return (
+                        <button
+                          key={cat}
+                          onClick={() => setCardFilters(prev => ({ ...prev, [commande.id]: cat }))}
+                          className={`flex-1 py-1 text-[11px] font-bold rounded-md transition-all capitalize ${
+                            currentFilter === cat
+                              ? 'bg-white dark:bg-dark-accent text-primary dark:text-white shadow-sm'
+                              : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200'
+                          }`}
+                        >
+                          {cat === 'all' ? 'Tous' : cat === 'boisson' ? '🍷 Boissons' : '🍲 Nourriture'}
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   <div className="space-y-2.5">
                     {/* Mode diagnostic : affichage minimal si pas d'items */}
                     {commande.commande_items && commande.commande_items.length > 0 ? (
-                      commande.commande_items.slice(0, 3).map((item, index) => (
+                      commande.commande_items
+                        .filter((item: any) => {
+                          const filter = cardFilters[commande.id] || 'all';
+                          if (filter === 'all') return true;
+                          return item.produits?.categorie === filter;
+                        })
+                        .map((item, index) => (
                         <div key={index} className="flex justify-between items-baseline text-sm group/item">
                           <span className="text-neutral-700 dark:text-neutral-200 font-medium flex items-center gap-2">
                             <span className="w-6 h-6 rounded bg-neutral-100 dark:bg-white/5 flex items-center justify-center text-xs font-bold text-primary dark:text-white border border-neutral-200 dark:border-white/5 group-hover/item:border-primary/30 transition-colors">
                               {item.quantite}x
                             </span>
                             {item.nom_produit}
+                            {item.produits?.categorie && (
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                                item.produits.categorie === 'boisson' ? 'bg-blue-500/10 text-blue-500' : 'bg-orange-500/10 text-orange-500'
+                              }`}>
+                                {item.produits.categorie}
+                              </span>
+                            )}
                           </span>
                           <span className="text-neutral-500 dark:text-neutral-400 text-xs tabular-nums font-mono">
                             {formatPrice(item.prix_unitaire * item.quantite)}

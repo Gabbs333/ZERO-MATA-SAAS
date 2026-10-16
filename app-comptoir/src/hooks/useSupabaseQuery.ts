@@ -73,7 +73,8 @@ export function useCommandesEnAttente(limit: number = 50) {
           *,
           produits (
             id,
-            nom
+            nom,
+            categorie
           )
         `)
         .in('commande_id', commandeIds);

@@ -119,6 +119,28 @@ export function FinancialDashboardScreen() {
     // Turnover (CA)
     const chiffre_affaires = cmds.reduce((sum, cmd) => sum + cmd.montant_total, 0);
 
+    // CA Bar vs Cuisine
+    let ca_bar = 0;
+    let ca_cuisine = 0;
+    let cout_achat_bar = 0;
+    let cout_achat_cuisine = 0;
+
+    cmds.forEach(cmd => {
+      cmd.commande_items.forEach((item: any) => {
+        const montant = item.montant_ligne || (item.prix_unitaire * item.quantite);
+        const cout = item.quantite * (item.produits?.prix_achat || 0);
+        const isNourriture = item.produits?.categorie === 'nourriture';
+
+        if (isNourriture) {
+          ca_cuisine += montant;
+          cout_achat_cuisine += cout;
+        } else {
+          ca_bar += montant;
+          cout_achat_bar += cout;
+        }
+      });
+    });
+
     // Collections (Encaissements)
     const encaissements = encs.reduce((sum, enc) => sum + enc.montant, 0);
 
@@ -126,24 +148,23 @@ export function FinancialDashboardScreen() {
     const ravitaillements = supplies.reduce((sum, sup) => sum + sup.montant_total, 0);
 
     // Gross Margin (Marge Brute)
-    // CA - (Quantity * Purchase Price)
-    let cout_achat_total = 0;
-    cmds.forEach(cmd => {
-      cmd.commande_items.forEach((item: any) => {
-        const prix_achat = item.produits?.prix_achat || 0;
-        cout_achat_total += item.quantite * prix_achat;
-      });
-    });
+    let cout_achat_total = cout_achat_bar + cout_achat_cuisine;
     const marge_brute = chiffre_affaires - cout_achat_total;
+    const marge_bar = ca_bar - cout_achat_bar;
+    const marge_cuisine = ca_cuisine - cout_achat_cuisine;
 
     // Shortfall (Manque à Gagner)
     const manque_a_gagner = chiffre_affaires - encaissements;
 
     return {
       chiffre_affaires,
+      ca_bar,
+      ca_cuisine,
       encaissements,
       ravitaillements,
       marge_brute,
+      marge_bar,
+      marge_cuisine,
       manque_a_gagner
     };
   }, [commandesData, encaissementsData, suppliesData]);
@@ -292,6 +313,53 @@ export function FinancialDashboardScreen() {
             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mt-1 relative z-10">
               (CA - Coût d'achat)
             </p>
+          </div>
+        </div>
+
+        {/* Bar vs Cuisine Breakdown Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Bar Department */}
+          <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl p-5 border border-blue-500/20 shadow-soft">
+            <div className="flex items-center justify-between mb-3">
+              <span className="px-2.5 py-1 bg-blue-500/10 text-blue-500 rounded-lg text-xs font-bold uppercase tracking-wider">
+                🍷 Département Bar (Boissons)
+              </span>
+              <span className="text-xs text-neutral-400 font-medium">
+                {metrics.chiffre_affaires > 0 ? Math.round((metrics.ca_bar / metrics.chiffre_affaires) * 100) : 0}% du CA
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div>
+                <p className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Chiffre d'Affaires</p>
+                <p className="text-xl font-black text-primary dark:text-white mt-0.5">{isLoading ? '...' : formatMontant(metrics.ca_bar)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Marge Brute Bar</p>
+                <p className="text-xl font-black text-blue-600 dark:text-blue-400 mt-0.5">{isLoading ? '...' : formatMontant(metrics.marge_bar)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Cuisine Department */}
+          <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl p-5 border border-orange-500/20 shadow-soft">
+            <div className="flex items-center justify-between mb-3">
+              <span className="px-2.5 py-1 bg-orange-500/10 text-orange-500 rounded-lg text-xs font-bold uppercase tracking-wider">
+                🍲 Département Cuisine (Repas)
+              </span>
+              <span className="text-xs text-neutral-400 font-medium">
+                {metrics.chiffre_affaires > 0 ? Math.round((metrics.ca_cuisine / metrics.chiffre_affaires) * 100) : 0}% du CA
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div>
+                <p className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Chiffre d'Affaires</p>
+                <p className="text-xl font-black text-primary dark:text-white mt-0.5">{isLoading ? '...' : formatMontant(metrics.ca_cuisine)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Marge Brute Cuisine</p>
+                <p className="text-xl font-black text-orange-600 dark:text-orange-400 mt-0.5">{isLoading ? '...' : formatMontant(metrics.marge_cuisine)}</p>
+              </div>
+            </div>
           </div>
         </div>
 

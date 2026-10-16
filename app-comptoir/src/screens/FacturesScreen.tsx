@@ -726,9 +726,21 @@ export default function FacturesScreen() {
                       <ReceiptIcon className="w-6 h-6 text-primary dark:text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-bold font-display text-primary dark:text-white tracking-tight truncate" title={facture.numero_facture}>
-                        {facture.numero_facture}
-                      </h3>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h3 className="text-lg font-bold font-display text-primary dark:text-white tracking-tight truncate" title={facture.numero_facture}>
+                          {facture.numero_facture}
+                        </h3>
+                      </div>
+                      {facture.numero_facture.includes('-BAR') && (
+                        <span className="inline-block px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded text-[10px] font-bold uppercase tracking-wider">
+                          🍷 Département Bar
+                        </span>
+                      )}
+                      {facture.numero_facture.includes('-CUI') && (
+                        <span className="inline-block px-2 py-0.5 bg-orange-500/10 text-orange-500 rounded text-[10px] font-bold uppercase tracking-wider">
+                          🍲 Département Cuisine
+                        </span>
+                      )}
                     </div>
                   </div>
 

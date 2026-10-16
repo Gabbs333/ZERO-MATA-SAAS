@@ -126,6 +126,7 @@ export function ProduitsScreen() {
       fetchTarifs(selectedProductForTarifs.id);
     }
   };
+  const { data: produits, isPending: isLoading, refetch } = useSupabaseQuery<Produit[]>(
     ['produits', profile?.etablissement_id],
     async () => {
       if (!profile?.etablissement_id) return { data: [] as Produit[], error: null };
