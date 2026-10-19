@@ -164,7 +164,18 @@ export function DashboardScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
-  // Fetch credit overrun alerts (creances_clients)
+  // Fetch Factures for encaissements department breakdown
+  const { data: facturesData } = useSupabaseQuery(
+    ['dashboard_factures', profile?.etablissement_id],
+    async () => {
+      const { data, error } = await supabase
+        .from('factures')
+        .select('id, numero_facture')
+        .eq('etablissement_id', profile?.etablissement_id);
+      return { data: data || [], error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
   const { data: creancesData, isLoading: creancesLoading } = useSupabaseQuery(
     ['creances_clients', profile?.etablissement_id],
     async () => {
@@ -185,6 +196,10 @@ export function DashboardScreen() {
     // Robustness: Handle missing data gracefully
     const cmds = commandesData || [];
     const encs = encaissementsData || [];
+    const facts = facturesData || [];
+
+    const factureMap = new Map();
+    facts.forEach((f: any) => factureMap.set(f.id, f.numero_facture));
 
     const ca = cmds.reduce((sum: number, cmd: any) => sum + cmd.montant_total, 0);
     const enc = encs.reduce((sum: number, pay: any) => sum + pay.montant, 0);
@@ -193,6 +208,8 @@ export function DashboardScreen() {
 
     let ca_bar = 0;
     let ca_cuisine = 0;
+    let encaissements_bar = 0;
+    let encaissements_cuisine = 0;
 
     cmds.forEach((cmd: any) => {
       cmd.commande_items?.forEach((item: any) => {
@@ -205,6 +222,15 @@ export function DashboardScreen() {
       });
     });
 
+    encs.forEach((pay: any) => {
+      const numFacture = factureMap.get(pay.facture_id) || '';
+      if (numFacture.includes('-CUI')) {
+        encaissements_cuisine += pay.montant;
+      } else {
+        encaissements_bar += pay.montant;
+      }
+    });
+
     const nbPlats = platsServisData?.total_plats_servis || 0;
 
     return {
@@ -212,11 +238,13 @@ export function DashboardScreen() {
       ca_bar,
       ca_cuisine,
       encaissements: enc,
+      encaissements_bar,
+      encaissements_cuisine,
       commandes_count: count,
       panier_moyen,
       plats_servis: nbPlats
     };
-  }, [commandesData, encaissementsData, platsServisData]);
+  }, [commandesData, encaissementsData, facturesData, platsServisData]);
 
   const kpisLoading = cmdLoading || encLoading || platsLoading;
 
@@ -675,34 +703,50 @@ export function DashboardScreen() {
         {/* Bar vs Cuisine Breakdown Row */}
         <div className="grid grid-cols-2 gap-3">
           {/* Bar Card */}
-          <div className="flex flex-col gap-1 rounded-2xl p-4 bg-white dark:bg-dark-card/40 dark:backdrop-blur-md border border-blue-500/20 shadow-soft">
-            <div className="flex items-center justify-between mb-1">
+          <div className="flex flex-col gap-1.5 rounded-2xl p-4 bg-white dark:bg-dark-card/40 dark:backdrop-blur-md border border-blue-500/20 shadow-soft">
+            <div className="flex items-center justify-between mb-0.5">
               <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">🍷 Bar (Boissons)</span>
-            </div>
-            <p className="text-primary dark:text-white text-lg font-black tracking-tight">
-              {formatMontant(kpis?.ca_bar || 0)}
-            </p>
-            <div className="flex items-center justify-between mt-1">
-              <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Part du CA</span>
               <span className="text-[10px] font-black text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-full">
-                {kpis?.chiffre_affaires ? Math.round((kpis.ca_bar / kpis.chiffre_affaires) * 100) : 0}%
+                {kpis?.chiffre_affaires ? Math.round((kpis.ca_bar / kpis.chiffre_affaires) * 100) : 0}% du CA
               </span>
+            </div>
+            <div className="flex justify-between items-baseline">
+              <div>
+                <p className="text-[9px] text-neutral-400 font-bold uppercase">CA</p>
+                <p className="text-primary dark:text-white text-base font-black tracking-tight">
+                  {formatMontant(kpis?.ca_bar || 0)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] text-neutral-400 font-bold uppercase">Encaissé</p>
+                <p className="text-blue-600 dark:text-blue-400 text-base font-black tracking-tight">
+                  {formatMontant(kpis?.encaissements_bar || 0)}
+                </p>
+              </div>
             </div>
           </div>
 
           {/* Cuisine Card */}
-          <div className="flex flex-col gap-1 rounded-2xl p-4 bg-white dark:bg-dark-card/40 dark:backdrop-blur-md border border-orange-500/20 shadow-soft">
-            <div className="flex items-center justify-between mb-1">
+          <div className="flex flex-col gap-1.5 rounded-2xl p-4 bg-white dark:bg-dark-card/40 dark:backdrop-blur-md border border-orange-500/20 shadow-soft">
+            <div className="flex items-center justify-between mb-0.5">
               <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">🍲 Cuisine (Repas)</span>
-            </div>
-            <p className="text-primary dark:text-white text-lg font-black tracking-tight">
-              {formatMontant(kpis?.ca_cuisine || 0)}
-            </p>
-            <div className="flex items-center justify-between mt-1">
-              <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Part du CA</span>
               <span className="text-[10px] font-black text-orange-600 bg-orange-500/10 px-2 py-0.5 rounded-full">
-                {kpis?.chiffre_affaires ? Math.round((kpis.ca_cuisine / kpis.chiffre_affaires) * 100) : 0}%
+                {kpis?.chiffre_affaires ? Math.round((kpis.ca_cuisine / kpis.chiffre_affaires) * 100) : 0}% du CA
               </span>
+            </div>
+            <div className="flex justify-between items-baseline">
+              <div>
+                <p className="text-[9px] text-neutral-400 font-bold uppercase">CA</p>
+                <p className="text-primary dark:text-white text-base font-black tracking-tight">
+                  {formatMontant(kpis?.ca_cuisine || 0)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] text-neutral-400 font-bold uppercase">Encaissé</p>
+                <p className="text-orange-600 dark:text-orange-400 text-base font-black tracking-tight">
+                  {formatMontant(kpis?.encaissements_cuisine || 0)}
+                </p>
+              </div>
             </div>
           </div>
         </div>
