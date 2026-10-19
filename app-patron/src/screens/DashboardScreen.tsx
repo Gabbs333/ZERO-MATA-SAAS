@@ -429,9 +429,8 @@ export function DashboardScreen() {
             tables (numero),
             profiles!serveuse_id (nom, prenom)
           ),
-          profiles (nom, prenom)
+          profiles!utilisateur_id (nom, prenom)
         `)
-        .is('date_validation', null)
         .order('date_demande', { ascending: false });
 
       if (error) {
