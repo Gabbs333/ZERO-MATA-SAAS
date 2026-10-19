@@ -477,12 +477,10 @@ export function UtilisateursScreen() {
                             <p className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{formatMontant(stats?.chiffre_affaires || 0)}</p>
                           </div>
                         </div>
-                        {impayes > 0 && (
-                          <div className="pt-2 border-t border-neutral-200/50 dark:border-white/5 flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-semantic-red uppercase tracking-wider">⚠️ Impayés / Non versé</span>
-                            <span className="text-sm font-black text-semantic-red">{formatMontant(impayes)}</span>
-                          </div>
-                        )}
+                        <div className="pt-2 border-t border-neutral-200/50 dark:border-white/5 flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-semantic-red uppercase tracking-wider">⚠️ Impayés / Non versé</span>
+                          <span className={`text-sm font-black ${impayes > 0 ? 'text-semantic-red' : 'text-neutral-400'}`}>{formatMontant(impayes)}</span>
+                        </div>
                       </div>
                     );
                   })()}
