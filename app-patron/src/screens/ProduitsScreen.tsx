@@ -27,7 +27,8 @@ const INITIAL_FORM_DATA: ProductFormData = {
   prix_vente: 0,
   prix_achat: 0,
   cout_moyen_pourcentage: null,
-  actif: true
+  actif: true,
+  gestion_stock: true
 };
 
 export function ProduitsScreen() {
@@ -248,7 +249,8 @@ export function ProduitsScreen() {
         prix_vente: product.prix_vente,
         prix_achat: product.prix_achat || 0,
         cout_moyen_pourcentage: product.cout_moyen_pourcentage ?? null,
-        actif: product.actif
+        actif: product.actif,
+        gestion_stock: product.gestion_stock ?? (product.categorie !== 'nourriture')
       });
       setInitialStock('');
       setCustomPercentage('');
@@ -258,8 +260,8 @@ export function ProduitsScreen() {
       const percentage = product.cout_moyen_pourcentage ?? profile?.etablissement?.cout_moyen_pourcentage ?? null;
       setSelectedPercentage(percentage);
 
-      // Fetch current stock for this product (skip for nourriture)
-      if (product.categorie !== 'nourriture') {
+      // Fetch current stock for this product (uniquement si gestion de stock active)
+      if (product.categorie !== 'nourriture' || product.gestion_stock) {
         try {
           const { data: stockData, error: stockErr } = await supabase
             .from('stocks')
@@ -325,8 +327,8 @@ export function ProduitsScreen() {
           .eq('id', editingProduct.id);
         if (error) throw error;
 
-        // Adjust stock if the user changed it (skip for nourriture)
-        if (formData.categorie !== 'nourriture' && newStock !== '' && currentStock !== null && Number(newStock) !== currentStock) {
+        // Adjust stock if the user changed it (pour les produits avec gestion de stock active)
+        if ((formData.categorie !== 'nourriture' || formData.gestion_stock) && newStock !== '' && currentStock !== null && Number(newStock) !== currentStock) {
           const { error: stockAdjustError } = await supabase
             .rpc('adjust_stock_from_product', {
               p_produit_id: editingProduct.id,
@@ -354,8 +356,8 @@ export function ProduitsScreen() {
 
         if (error) throw error;
 
-        // Create a stock entry (skip for nourriture)
-        if (formData.categorie !== 'nourriture' && data?.id) {
+        // Create a stock entry (pour les produits avec gestion de stock active, y compris la nourriture en unités)
+        if ((formData.categorie !== 'nourriture' || formData.gestion_stock) && data?.id) {
             console.log('Product created with ID:', data.id);
             const { error: stockError } = await supabase
                 .from('stocks')
@@ -379,8 +381,8 @@ export function ProduitsScreen() {
             }
         }
 
-        // Invalidate stocks query to refresh the list (skip for nourriture)
-        if (formData.categorie !== 'nourriture') {
+        // Invalidate stocks query to refresh the list (pour les produits avec gestion de stock active)
+        if (formData.categorie !== 'nourriture' || formData.gestion_stock) {
           queryClient.invalidateQueries({ queryKey: ['stocks'] });
         }
       }
@@ -739,7 +741,7 @@ export function ProduitsScreen() {
                     <button
                       type="button"
                       key={cat}
-                      onClick={() => setFormData({...formData, categorie: cat})}
+                      onClick={() => setFormData({...formData, categorie: cat, gestion_stock: cat !== 'nourriture' ? true : formData.gestion_stock})}
                       className={`px-4 py-2 rounded-lg text-sm font-medium capitalize border-2 transition-all ${
                         formData.categorie === cat
                           ? 'border-primary dark:border-dark-accent text-primary dark:text-white bg-primary/5 dark:bg-dark-accent/10'
@@ -751,6 +753,22 @@ export function ProduitsScreen() {
                   ))}
                 </div>
               </div>
+
+              {/* Option gestion de stock (Particulièrement utile pour la nourriture en unités) */}
+              {formData.categorie === 'nourriture' && (
+                <div className="p-4 bg-orange-500/5 border border-orange-500/20 rounded-xl flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-bold text-primary dark:text-white block">Activer le suivi de stock (Unités préparées)</label>
+                    <p className="text-xs text-neutral-500">Cochez si ce plat est préparé en unités et doit être décompté du stock à chaque vente.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formData.gestion_stock ?? false}
+                    onChange={e => setFormData({...formData, gestion_stock: e.target.checked})}
+                    className="w-5 h-5 accent-primary dark:accent-dark-accent cursor-pointer"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

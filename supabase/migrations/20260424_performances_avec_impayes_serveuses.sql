@@ -26,7 +26,7 @@ BEGIN
   -- 1. Performances des Serveurs / Serveuses (avec CA, Commandes et Impayés/Non versé)
   SELECT COALESCE(json_agg(row_to_json(s)), '[]'::json) INTO v_serveurs_json
   FROM (
-    SELECT 
+    SELECT
       p.id as utilisateur_id,
       p.nom,
       p.prenom,
@@ -42,7 +42,7 @@ BEGIN
           WHERE cmd.serveuse_id = p.id
             AND f.statut IN ('en_attente_paiement', 'partiellement_payee')
             AND f.etablissement_id = v_etablissement_id
-        ), 
+        ),
         0
       ) as montant_impayes,
       COALESCE(
@@ -53,11 +53,11 @@ BEGIN
           WHERE cmd.serveuse_id = p.id
             AND f.statut IN ('en_attente_paiement', 'partiellement_payee')
             AND f.etablissement_id = v_etablissement_id
-        ), 
+        ),
         0
       ) as nombre_impayes
     FROM profiles p
-    LEFT JOIN commandes c ON c.serveuse_id = p.id 
+    LEFT JOIN commandes c ON c.serveuse_id = p.id
       AND c.etablissement_id = v_etablissement_id
       AND c.statut IN ('validee', 'terminee')
       AND c.date_creation BETWEEN p_debut AND p_fin
@@ -71,7 +71,7 @@ BEGIN
   -- 2. Performances du Personnel de Comptoir / Caisse
   SELECT COALESCE(json_agg(row_to_json(co)), '[]'::json) INTO v_comptoir_json
   FROM (
-    SELECT 
+    SELECT
       p.id as utilisateur_id,
       p.nom,
       p.prenom,

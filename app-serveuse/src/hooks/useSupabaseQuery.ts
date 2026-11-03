@@ -60,12 +60,13 @@ export function useProduitsDisponibles() {
 
       if (stockError) return { data: null, error: stockError };
 
-      // 2. Récupérer tous les plats de nourriture (qui ne nécessitent pas de stock)
+      // 2. Récupérer les plats de nourriture SANS gestion de stock (préparés à la commande)
       const { data: nourritureData, error: nourritureError } = await supabase
         .from('produits')
         .select('*')
         .eq('etablissement_id', etablissementId)
-        .eq('categorie', 'nourriture');
+        .eq('categorie', 'nourriture')
+        .eq('gestion_stock', false);
 
       if (nourritureError) return { data: null, error: nourritureError };
 
