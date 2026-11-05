@@ -220,7 +220,14 @@ export function UtilisateursScreen() {
         
         if (!authResponse.ok || authResult.error) {
           console.error('Auth API error:', authResult);
-          throw new Error(authResult.error?.message || 'Erreur lors de la création de l\'utilisateur');
+          const realMessage =
+            authResult.msg ||
+            authResult.message ||
+            authResult.error_description ||
+            authResult.error?.message ||
+            authResult.error_description ||
+            `Erreur HTTP ${authResponse.status}`;
+          throw new Error(`Création échouée : ${realMessage}`);
         }
         
         console.log('User created with ID:', authResult.id);
