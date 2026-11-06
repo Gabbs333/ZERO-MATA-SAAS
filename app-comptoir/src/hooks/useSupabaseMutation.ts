@@ -326,3 +326,98 @@ export function useCreateEncaissement(
     ...options,
   });
 }
+
+// ============================================================================
+// PRISE DE COMMANDE AU COMPTOIR
+// ============================================================================
+
+export interface ComptoirOrderItem {
+  produit_id: string;
+  quantite: number;
+}
+
+export interface CreateCommandeComptoirParams {
+  items: ComptoirOrderItem[];
+  table_id?: string | null;
+  type_service: 'sur_place' | 'emporter';
+  client_id?: string | null;
+  valider_immediatement: boolean;
+}
+
+export function useCreateCommandeComptoir(
+  options?: Omit<UseMutationOptions<any, Error, CreateCommandeComptoirParams>, 'mutationFn'>
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<any, Error, CreateCommandeComptoirParams>({
+    mutationFn: async (params) => {
+      const { data, error } = await supabase.rpc('create_commande_comptoir', {
+        p_items: params.items,
+        p_table_id: params.table_id ?? null,
+        p_type_service: params.type_service,
+        p_client_id: params.client_id ?? null,
+        p_valider_immediatement: params.valider_immediatement,
+      });
+
+      if (error) throw error;
+      if (data && typeof data === 'object' && 'success' in data && data.success === false) {
+        throw new Error((data as any).error || 'Erreur lors de la création de la commande');
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['commandes'] });
+      queryClient.invalidateQueries({ queryKey: ['factures'] });
+      queryClient.invalidateQueries({ queryKey: ['stocks'] });
+      queryClient.invalidateQueries({ queryKey: ['tables'] });
+    },
+    ...options,
+  });
+}
+
+// ============================================================================
+// OPÉRATIONS DE STOCK (ENTRÉE / SORTIE / ÉCHANGE)
+// ============================================================================
+
+export interface StockOperationLine {
+  produit_id: string;
+  sens: 'entree' | 'sortie';
+  quantite: number;
+  prix_unitaire?: number;
+}
+
+export interface CreateStockOperationParams {
+  type_operation: 'entree' | 'sortie' | 'echange';
+  motif: string;
+  contrepartie?: string;
+  lignes: StockOperationLine[];
+}
+
+export function useCreerOperationStock(
+  options?: Omit<UseMutationOptions<any, Error, CreateStockOperationParams>, 'mutationFn'>
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<any, Error, CreateStockOperationParams>({
+    mutationFn: async (params) => {
+      const { data, error } = await supabase.rpc('creer_operation_stock', {
+        p_type_operation: params.type_operation,
+        p_motif: params.motif,
+        p_contrepartie: params.contrepartie ?? null,
+        p_lignes: params.lignes,
+      });
+
+      if (error) throw error;
+      if (data && typeof data === 'object' && 'success' in data && data.success === false) {
+        throw new Error((data as any).error || 'Erreur lors de l\'opération de stock');
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stocks'] });
+      queryClient.invalidateQueries({ queryKey: ['produits'] });
+      queryClient.invalidateQueries({ queryKey: ['operations_stock'] });
+    },
+    ...options,
+  });
+}

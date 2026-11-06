@@ -18,7 +18,9 @@ import {
   ArrowLeftCircle,
   ArrowRightLeft,
   Users,
-  Wallet
+  Wallet,
+  ShoppingBag,
+  PackagePlus
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -62,10 +64,12 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const menuItems = [
+    { text: 'Nouvelle commande', icon: ShoppingBag, path: '/nouvelle-commande' },
     { text: 'Validation', icon: CheckCircle, path: '/' },
     { text: 'Factures', icon: Receipt, path: '/factures' },
     { text: 'Historique', icon: Clock, path: '/historique' },
     { text: 'Stock', icon: Package, path: '/stock' },
+    { text: 'Opérations stock', icon: PackagePlus, path: '/operations-stock' },
     { text: 'Caisse', icon: Wallet, path: '/caisse' },
     { text: 'Clients', icon: Users, path: '/clients' },
     { text: 'Échanges', icon: ArrowRightLeft, path: '/echanges' },
