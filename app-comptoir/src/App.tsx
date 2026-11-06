@@ -13,7 +13,7 @@ import StockScreen from './screens/StockScreen';
 import { RetoursScreen } from './screens/RetoursScreen';
 import { EchangesScreen } from './screens/EchangesScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
-import CaisseScreen from './screens/CaisseScreen';
+import { CaisseScreen } from './screens/CaisseScreen';
 import NouvelleCommandeScreen from './screens/NouvelleCommandeScreen';
 import StockOperationsScreen from './screens/StockOperationsScreen';
 

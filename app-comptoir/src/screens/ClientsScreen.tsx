@@ -26,7 +26,7 @@ import type { Client } from '../types/database.types';
 
 // ─── Types locaux ──────────────────────────────────────────────────────────
 
-interface ClientWithStats extends Client {
+interface ClientWithStats extends Omit<Client, 'credit_active' | 'credit_limit'> {
   nombre_commandes?: number;
   chiffre_affaires_total?: number;
   solde_restant?: number;
@@ -81,7 +81,7 @@ export function ClientsScreen() {
 
   // ── Modal state ────────────────────────────────────────────────────────
   const [showModal, setShowModal] = useState(false);
-  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [editingClient, setEditingClient] = useState<ClientWithStats | null>(null);
   const [formNom, setFormNom] = useState('');
   const [formPrenom, setFormPrenom] = useState('');
   const [formTelephone, setFormTelephone] = useState('');

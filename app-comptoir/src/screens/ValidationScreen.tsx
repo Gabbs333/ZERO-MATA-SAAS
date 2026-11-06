@@ -39,7 +39,7 @@ export default function ValidationScreen() {
   const [clientSelections, setClientSelections] = useState<Record<string, string>>({});
 
   // Ref pour suivre les assignations client en cours (évite la race condition avec la validation)
-  const pendingAssignments = useRef<Map<string, Promise<void>>>(new Map());
+  const pendingAssignments = useRef<Map<string, PromiseLike<void>>>(new Map());
 
   // Charger la liste des clients actifs
   const { data: clients } = useSupabaseQuery<{ id: string; nom: string; prenom: string }[]>(

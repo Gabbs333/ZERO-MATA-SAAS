@@ -81,6 +81,12 @@ export interface CommandeItem {
   quantite: number;
   prix_unitaire: number;
   etablissement_id: string;
+  montant_ligne?: number;
+  produits?: {
+    id?: string;
+    nom?: string;
+    categorie?: string;
+  } | null;
 }
 
 export interface Facture {

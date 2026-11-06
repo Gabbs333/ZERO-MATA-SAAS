@@ -805,7 +805,7 @@ export function ProduitsScreen() {
                     <label className="block text-sm font-bold text-primary dark:text-white mb-1.5">Prix Achat (calculé)</label>
                     <div className="relative">
                       <div className="w-full pl-4 pr-12 py-2 bg-neutral-100 dark:bg-dark-card/40 border-none rounded-lg text-primary dark:text-white font-bold">
-                        {formData.prix_achat > 0 ? `${formData.prix_achat.toLocaleString()} XAF` : '—'}
+                        {(formData.prix_achat ?? 0) > 0 ? `${(formData.prix_achat ?? 0).toLocaleString()} XAF` : '—'}
                       </div>
                     </div>
                   </div>
