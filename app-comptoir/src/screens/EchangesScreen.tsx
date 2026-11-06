@@ -11,6 +11,8 @@ import {
   ArrowRightLeft, ShoppingCart, Plus, Minus, RefreshCw
 } from 'lucide-react';
 import type { Facture, Produit } from '../types/database.types';
+import { buildPrixMap } from '../lib/prix';
+import type { Tarif } from '../lib/prix';
 
 // ─── Types locaux ──────────────────────────────────────────────────────────
 
@@ -151,6 +153,24 @@ export function EchangesScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
+  // Tarifs spécifiques (happy hours, week-ends, saisons…) pour valoriser les
+  // articles ajoutés au prix réellement applicable au moment de l'échange.
+  const { data: tarifs } = useSupabaseQuery<Tarif[]>(
+    ['tarifs_specifiques', profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('tarifs_specifiques')
+        .select('*')
+        .eq('etablissement_id', profile.etablissement_id)
+        .eq('actif', true);
+      return { data: (data as Tarif[]) || [], error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  const prixMap = useMemo(() => buildPrixMap(produits, tarifs), [produits, tarifs]);
+
   // Historique des échanges déjà effectués (traçabilité par facture)
   const { data: echanges, refetch: refetchEchanges } = useSupabaseQuery<EchangeResume[]>(
     ['echanges', profile?.etablissement_id],
@@ -274,7 +294,7 @@ export function EchangesScreen() {
         produit_id: produit.id,
         nom_produit: produit.nom,
         quantite: 1,
-        prix_unitaire: produit.prix_vente
+        prix_unitaire: prixMap.get(produit.id) ?? produit.prix_vente
       }];
     });
   };
@@ -543,19 +563,30 @@ export function EchangesScreen() {
 
                 {/* Liste produits catalogue */}
                 <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
-                  {filteredProduits?.map(produit => (
-                    <div
-                      key={produit.id}
-                      onClick={() => handleAddProduit(produit)}
-                      className="p-2 rounded-lg border border-neutral-200 dark:border-white/5 hover:border-green-500/30 cursor-pointer flex items-center justify-between transition-all"
-                    >
-                      <div>
-                        <p className="font-medium text-sm text-neutral-900 dark:text-white">{produit.nom}</p>
-                        <p className="text-xs text-neutral-500">{formatPrice(produit.prix_vente)}</p>
+                  {filteredProduits?.map(produit => {
+                    const prixCourant = prixMap.get(produit.id) ?? produit.prix_vente;
+                    const prixDynamique = prixCourant !== produit.prix_vente;
+                    return (
+                      <div
+                        key={produit.id}
+                        onClick={() => handleAddProduit(produit)}
+                        className="p-2 rounded-lg border border-neutral-200 dark:border-white/5 hover:border-green-500/30 cursor-pointer flex items-center justify-between transition-all"
+                      >
+                        <div>
+                          <p className="font-medium text-sm text-neutral-900 dark:text-white">{produit.nom}</p>
+                          <p className="text-xs text-neutral-500 flex items-center gap-1.5">
+                            {formatPrice(prixCourant)}
+                            {prixDynamique && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
+                                ⚡ tarif actif
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <Plus className="w-4 h-4 text-green-600" />
                       </div>
-                      <Plus className="w-4 h-4 text-green-600" />
-                    </div>
-                  ))}
+                    );
+                  })}
                   {filteredProduits?.length === 0 && (
                     <p className="text-neutral-400 text-xs text-center py-4">Aucun produit trouvé.</p>
                   )}

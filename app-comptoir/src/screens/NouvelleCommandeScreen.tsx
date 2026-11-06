@@ -9,22 +9,11 @@ import { useCreateCommandeComptoir } from '../hooks/useSupabaseMutation';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../config/supabase';
 import { formatPrice } from '../lib/utils';
+import { buildPrixMap } from '../lib/prix';
+import type { Tarif } from '../lib/prix';
 
 type TypeService = 'sur_place' | 'emporter';
 type Categorie = 'all' | 'boisson' | 'nourriture' | 'autre';
-
-interface Tarif {
-  produit_id: string;
-  prix_vente: number;
-  actif: boolean;
-  date_debut: string | null;
-  date_fin: string | null;
-  jours_semaine: number[] | null;
-  heure_debut: string | null;
-  heure_fin: string | null;
-  priorite: number;
-  date_creation: string;
-}
 
 interface Produit {
   id: string;
@@ -40,44 +29,6 @@ interface CartLine {
   produit: Produit;
   quantite: number;
   prix: number;
-}
-
-const hhmmToMinutes = (v: string | null): number | null => {
-  if (!v) return null;
-  const [h, m] = v.split(':').map(Number);
-  if (Number.isNaN(h)) return null;
-  return h * 60 + (m || 0);
-};
-
-// Reproduit la logique de get_prix_produit() côté client pour un total live fiable
-function computePrix(produit: Produit, tarifs: Tarif[], now: Date): number {
-  const dow = now.getDay(); // 0 = dimanche
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  const dateStr = now.toISOString().slice(0, 10);
-
-  const candidates = tarifs
-    .filter(t => t.produit_id === produit.id && t.actif)
-    .filter(t => {
-      if (t.date_debut && t.date_fin) {
-        if (dateStr < t.date_debut || dateStr > t.date_fin) return false;
-      }
-      if (t.jours_semaine && t.jours_semaine.length > 0) {
-        if (!t.jours_semaine.includes(dow)) return false;
-      }
-      const start = hhmmToMinutes(t.heure_debut);
-      const end = hhmmToMinutes(t.heure_fin);
-      if (start !== null && end !== null) {
-        if (start <= end) {
-          if (minutes < start || minutes > end) return false;
-        } else {
-          if (!(minutes >= start || minutes <= end)) return false;
-        }
-      }
-      return true;
-    })
-    .sort((a, b) => (b.priorite - a.priorite) || (b.date_creation > a.date_creation ? 1 : -1));
-
-  return candidates.length > 0 ? candidates[0].prix_vente : produit.prix_vente;
 }
 
 const getStockQty = (p: Produit): number => {
@@ -162,12 +113,7 @@ export default function NouvelleCommandeScreen() {
   );
 
   const now = new Date();
-  const prixMap = useMemo(() => {
-    const map = new Map<string, number>();
-    (produits || []).forEach(p => map.set(p.id, computePrix(p, tarifs || [], now)));
-    return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produits, tarifs]);
+  const prixMap = useMemo(() => buildPrixMap(produits, tarifs, now), [produits, tarifs]);
 
   const filtered = useMemo(() => {
     let list = (produits || []).filter(isDisponible);
