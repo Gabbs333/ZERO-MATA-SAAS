@@ -63,6 +63,22 @@ export function StockScreen() {
 
   const lowStockCount = stocks?.filter(s => s.quantite_actuelle <= s.seuil_alerte).length || 0;
 
+  // Historique des opérations de stock (lecture seule)
+  const { data: operations } = useSupabaseQuery<any[]>(
+    ['operations_stock_patron', profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('operations_stock')
+        .select('*, operations_stock_lignes(*), profiles!utilisateur_id(nom, prenom)')
+        .eq('etablissement_id', profile.etablissement_id)
+        .order('date_creation', { ascending: false })
+        .limit(50);
+      return { data, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-dark-bg pb-20 md:pb-6 space-y-6">
       {/* Header Section */}
@@ -250,6 +266,80 @@ export function StockScreen() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Historique des opérations de stock (lecture seule) */}
+      <div className="px-4 md:px-6 max-w-7xl mx-auto">
+        <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden">
+          <div className="p-4 border-b border-neutral-100 dark:border-white/5 flex items-center justify-between">
+            <div>
+              <h2 className="font-bold text-primary dark:text-white text-sm">Opérations de stock</h2>
+              <p className="text-[10px] text-neutral-400 uppercase tracking-widest mt-0.5">
+                Entrées, sorties et échanges — lecture seule
+              </p>
+            </div>
+            <span className="text-[10px] font-bold text-neutral-400">
+              {operations?.length || 0} opération(s)
+            </span>
+          </div>
+
+          {(!operations || operations.length === 0) ? (
+            <p className="p-6 text-center text-xs text-neutral-400">Aucune opération enregistrée.</p>
+          ) : (
+            <div className="divide-y divide-neutral-100 dark:divide-white/5 max-h-[55vh] overflow-y-auto">
+              {operations.map((op: any) => (
+                <div key={op.id} className="p-4 space-y-2 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={twMerge(
+                        "px-2 py-0.5 rounded-full text-[10px] font-black uppercase",
+                        op.type_operation === 'entree' ? "bg-emerald-500/10 text-emerald-600" :
+                        op.type_operation === 'sortie' ? "bg-red-500/10 text-red-500" :
+                        "bg-blue-500/10 text-blue-600"
+                      )}>
+                        {op.type_operation}
+                      </span>
+                      <span className="font-bold text-xs text-primary dark:text-white">{op.reference}</span>
+                      <span className="text-[10px] text-neutral-400">
+                        {new Date(op.date_creation).toLocaleString('fr-FR')}
+                      </span>
+                      {op.profiles && (
+                        <span className="text-[10px] text-neutral-400">
+                          • {op.profiles.prenom} {op.profiles.nom}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px] font-bold">
+                      <span className="text-emerald-600">+{formatMontant(op.valeur_entree || 0)}</span>
+                      <span className="text-red-500">−{formatMontant(op.valeur_sortie || 0)}</span>
+                      <span className="text-primary dark:text-white">Net {formatMontant(op.valeur_nette || 0)}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {op.motif}{op.contrepartie ? ` • ${op.contrepartie}` : ''}
+                  </p>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {(op.operations_stock_lignes || []).map((l: any) => (
+                      <span
+                        key={l.id}
+                        className={twMerge(
+                          "text-[10px] px-2 py-0.5 rounded-md font-medium",
+                          l.sens === 'entree'
+                            ? "bg-emerald-500/10 text-emerald-600"
+                            : "bg-red-500/10 text-red-500"
+                        )}
+                      >
+                        {l.sens === 'entree' ? '+' : '−'}{l.quantite} × {l.nom_produit}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <StockAdjustmentModal

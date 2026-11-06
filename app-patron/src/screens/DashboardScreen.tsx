@@ -164,14 +164,30 @@ export function DashboardScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
-  // Fetch Factures for encaissements department breakdown
+  // Composition des factures concernées par les encaissements de la période
+  // (permet de ventiler correctement les ventes Bar / Cuisine, y compris les anciennes factures globales)
   const { data: facturesData } = useSupabaseQuery(
-    ['dashboard_factures', profile?.etablissement_id],
+    ['dashboard_factures_split', dateRange.start.toISOString(), dateRange.end.toISOString(), profile?.etablissement_id],
     async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+
+      const { data: encs, error: encErr } = await supabase
+        .from('encaissements')
+        .select('facture_id')
+        .eq('etablissement_id', profile.etablissement_id)
+        .gte('date_encaissement', dateRange.start.toISOString())
+        .lte('date_encaissement', dateRange.end.toISOString());
+
+      if (encErr) return { data: [], error: encErr };
+
+      const ids = [...new Set((encs || []).map((e: any) => e.facture_id).filter(Boolean))];
+      if (ids.length === 0) return { data: [], error: null };
+
       const { data, error } = await supabase
         .from('factures')
-        .select('id, numero_facture')
-        .eq('etablissement_id', profile?.etablissement_id);
+        .select('id, numero_facture, commandes(commande_items(montant_ligne, prix_unitaire, quantite, produits(categorie)))')
+        .in('id', ids);
+
       return { data: data || [], error };
     },
     { enabled: !!profile?.etablissement_id }
@@ -198,8 +214,18 @@ export function DashboardScreen() {
     const encs = encaissementsData || [];
     const facts = facturesData || [];
 
-    const factureMap = new Map();
-    facts.forEach((f: any) => factureMap.set(f.id, f.numero_facture));
+    // Composition par facture : montants Bar / Cuisine (pour ventiler les paiements)
+    const factureSplit = new Map<string, { numero: string; bar: number; cuisine: number }>();
+    facts.forEach((f: any) => {
+      let bar = 0;
+      let cuisine = 0;
+      f.commandes?.commande_items?.forEach((it: any) => {
+        const montant = it.montant_ligne ?? ((it.prix_unitaire || 0) * (it.quantite || 0));
+        if (it.produits?.categorie === 'nourriture') cuisine += montant;
+        else bar += montant;
+      });
+      factureSplit.set(f.id, { numero: f.numero_facture || '', bar, cuisine });
+    });
 
     const ca = cmds.reduce((sum: number, cmd: any) => sum + cmd.montant_total, 0);
     const enc = encs.reduce((sum: number, pay: any) => sum + pay.montant, 0);
@@ -223,23 +249,31 @@ export function DashboardScreen() {
     });
 
     encs.forEach((pay: any) => {
-      const numFacture = factureMap.get(pay.facture_id) || '';
-      if (numFacture.includes('-CUI')) {
-        encaissements_cuisine += pay.montant;
-      } else {
+      const info = factureSplit.get(pay.facture_id);
+      const num = info?.numero || '';
+
+      if (num.includes('-BAR')) {
         encaissements_bar += pay.montant;
+      } else if (num.includes('-CUI')) {
+        encaissements_cuisine += pay.montant;
+      } else if (info && (info.bar + info.cuisine) > 0) {
+        // Ancienne facture globale : ventilation proportionnelle au contenu réel
+        const totalSplit = info.bar + info.cuisine;
+        encaissements_bar += pay.montant * (info.bar / totalSplit);
+        encaissements_cuisine += pay.montant * (info.cuisine / totalSplit);
       }
+      // Sinon : facture inconnue sans composition → non ventilée (évite d'inflater le bar)
     });
 
     const nbPlats = platsServisData?.total_plats_servis || 0;
 
     return {
       chiffre_affaires: ca,
-      ca_bar,
-      ca_cuisine,
+      ca_bar: Math.round(ca_bar),
+      ca_cuisine: Math.round(ca_cuisine),
       encaissements: enc,
-      encaissements_bar,
-      encaissements_cuisine,
+      encaissements_bar: Math.round(encaissements_bar),
+      encaissements_cuisine: Math.round(encaissements_cuisine),
       commandes_count: count,
       panier_moyen,
       plats_servis: nbPlats
