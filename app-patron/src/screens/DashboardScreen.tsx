@@ -283,7 +283,40 @@ export function DashboardScreen() {
       // Sinon : facture inconnue sans composition → non ventilée (évite d'inflater le bar)
     });
 
-    const nbPlats = platsServisData?.total_plats_servis || 0;
+    const nbPlatsRpc = platsServisData?.total_plats_servis || 0;
+
+    // Calcul local des plats servis depuis les commandes validées de la période.
+    // (Plus fiable que le RPC : même base que le CA, insensible aux dates de
+    // validation manquantes et aux variations de casse sur la catégorie.)
+    let platsServisLocal = 0;
+    const platsMap = new Map<string, { produit_id: string; produit_nom: string; quantite_servie: number; chiffre_affaires: number }>();
+    cmds.forEach((cmd: any) => {
+      cmd.commande_items?.forEach((item: any) => {
+        if ((item.produits?.categorie || '').toLowerCase() !== 'nourriture') return;
+        const qte = item.quantite || 0;
+        if (qte <= 0) return;
+        platsServisLocal += qte;
+        const nom = item.produits?.nom || item.nom_produit || 'Inconnu';
+        const montant = item.montant_ligne ?? (item.prix_unitaire || 0) * qte;
+        const existing = platsMap.get(item.produit_id);
+        if (existing) {
+          existing.quantite_servie += qte;
+          existing.chiffre_affaires += montant;
+        } else {
+          platsMap.set(item.produit_id, {
+            produit_id: item.produit_id,
+            produit_nom: nom,
+            quantite_servie: qte,
+            chiffre_affaires: montant,
+          });
+        }
+      });
+    });
+
+    const platsParProduit = platsServisLocal > 0
+      ? Array.from(platsMap.values()).sort((a, b) => b.quantite_servie - a.quantite_servie)
+      : (platsServisData?.plats_par_produit || []);
+    const nbPlats = platsServisLocal > 0 ? platsServisLocal : nbPlatsRpc;
 
     return {
       chiffre_affaires: ca,
@@ -294,7 +327,8 @@ export function DashboardScreen() {
       encaissements_cuisine: Math.round(encaissements_cuisine),
       commandes_count: count,
       panier_moyen,
-      plats_servis: nbPlats
+      plats_servis: nbPlats,
+      plats_par_produit: platsParProduit,
     };
   }, [commandesData, encaissementsData, facturesData, platsServisData]);
 
@@ -453,6 +487,17 @@ export function DashboardScreen() {
         });
     }
   );
+
+  // Répartition du CA : encaissé / ventes à crédit / factures impayées
+  const caRepartition = useMemo(() => {
+    const ca = kpis?.chiffre_affaires || 0;
+    const pct = (v: number) => (ca > 0 ? Math.round((v / ca) * 100) : 0);
+    return {
+      encaisse: { montant: kpis?.encaissements || 0, pct: pct(kpis?.encaissements || 0) },
+      credit: { montant: creditSales.montant_total, pct: pct(creditSales.montant_total) },
+      impaye: { montant: totalDebt || 0, pct: pct(totalDebt || 0) },
+    };
+  }, [kpis, creditSales, totalDebt]);
 
   // Fetch pending validations for the period
   const { data: pendingCommandes, isLoading: pendingLoading } = useSupabaseQuery(
@@ -843,7 +888,7 @@ export function DashboardScreen() {
               {kpis?.plats_servis || 0} <span className="text-xs font-normal text-neutral-500">plats</span>
             </p>
             <div className="flex flex-wrap gap-2">
-              {platsServisData?.plats_par_produit && platsServisData.plats_par_produit.slice(0, 3).map((p: any) => (
+              {kpis?.plats_par_produit && kpis.plats_par_produit.slice(0, 3).map((p: any) => (
                 <span key={p.produit_id} className="text-[10px] text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
                   {p.produit_nom}: {p.quantite_servie}
                 </span>
@@ -852,11 +897,63 @@ export function DashboardScreen() {
           </div>
         </div>
 
+        {/* Répartition du CA : encaissé / crédit / impayés */}
+        <div className="rounded-2xl p-4 bg-white dark:bg-dark-card/40 dark:backdrop-blur-md border border-neutral-200 dark:border-white/5 shadow-soft">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">
+              Suivi des règlements (part du CA)
+            </span>
+            {(kpisLoading || debtLoading) && (
+              <div className="size-3 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+            )}
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="size-2 shrink-0 rounded-full bg-green-500"></div>
+                <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest truncate">Encaissé</span>
+              </div>
+              <div className="flex items-baseline gap-2 shrink-0">
+                <span className="text-xs font-black text-primary dark:text-white">{formatMontant(caRepartition.encaisse.montant)}</span>
+                <span className="text-[10px] font-bold text-green-600 bg-green-500/10 px-1.5 py-0.5 rounded-full">{caRepartition.encaisse.pct}%</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="size-2 shrink-0 rounded-full bg-purple-500"></div>
+                <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest truncate">Ventes à crédit</span>
+              </div>
+              <div className="flex items-baseline gap-2 shrink-0">
+                <span className="text-xs font-black text-primary dark:text-white">{formatMontant(caRepartition.credit.montant)}</span>
+                <span className="text-[10px] font-bold text-purple-600 bg-purple-500/10 px-1.5 py-0.5 rounded-full">{caRepartition.credit.pct}%</span>
+              </div>
+            </div>
+            {creditSales.count > 0 && (
+              <p className="text-[10px] text-neutral-400 dark:text-neutral-500 pl-4">
+                {creditSales.count} facture(s) à crédit • Restant dû : {formatMontant(creditSales.montant_restant)}
+              </p>
+            )}
+
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-neutral-200 dark:border-white/10">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="size-2 shrink-0 rounded-full bg-red-500"></div>
+                <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest truncate">Factures impayées</span>
+              </div>
+              <div className="flex items-baseline gap-2 shrink-0">
+                <span className="text-xs font-black text-primary dark:text-white">{formatMontant(caRepartition.impaye.montant)}</span>
+                <span className="text-[10px] font-bold text-red-600 bg-red-500/10 px-1.5 py-0.5 rounded-full">{caRepartition.impaye.pct}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Secondary Row: Debt */}
         <div className="flex items-center justify-between rounded-2xl p-4 bg-white dark:bg-dark-card/40 dark:backdrop-blur-md border border-neutral-200 dark:border-white/5 shadow-soft border-l-4 border-l-red-500 hover:border-primary/20 dark:hover:border-dark-accent/30 transition-all">
           <div className="flex flex-col">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">Créances de la période</span>
+              <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">Factures impayées (créances de la période)</span>
               {debtLoading && <div className="size-3 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>}
             </div>
             <div className="flex items-baseline gap-1">
