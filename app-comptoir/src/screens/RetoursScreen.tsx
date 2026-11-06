@@ -92,6 +92,14 @@ interface RetourHistorique {
   } | null;
 }
 
+/** Échange déjà enregistré sur une facture (traçabilité) */
+interface EchangeResume {
+  id: string;
+  facture_id: string;
+  numero_echange: string;
+  date_echange: string;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -262,6 +270,31 @@ export function RetoursScreen() {
     { enabled: !!etablissementId },
   );
 
+  // Échanges déjà effectués (une facture peut avoir été échangée sans retour)
+  const { data: echanges } = useSupabaseQuery<EchangeResume[]>(
+    ['echanges_retours', etablissementId],
+    async () => {
+      if (!etablissementId) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('echanges')
+        .select('id, facture_id, numero_echange, date_echange')
+        .eq('etablissement_id', etablissementId)
+        .order('date_echange', { ascending: false });
+      return { data: (data as EchangeResume[]) || [], error };
+    },
+    { enabled: !!etablissementId },
+  );
+
+  const echangesParFacture = useMemo(() => {
+    const map = new Map<string, EchangeResume[]>();
+    for (const echange of echanges || []) {
+      const list = map.get(echange.facture_id) || [];
+      list.push(echange);
+      map.set(echange.facture_id, list);
+    }
+    return map;
+  }, [echanges]);
+
   // =========================================================================
   // Pre-selected facture from navigation (kept for backward compatibility)
   // =========================================================================
@@ -400,7 +433,7 @@ export function RetoursScreen() {
 
       // Facture globale héritée (sans suffixe) : tous les articles sont éligibles.
       if (!departement || items.length === 0) {
-        setEnrichedItems(items);
+        setEnrichedItems(items.filter((item) => item.quantite > 0));
         return;
       }
 
@@ -417,12 +450,14 @@ export function RetoursScreen() {
       );
 
       setEnrichedItems(
-        items.filter((item) => {
-          const categorie = categorieParProduit.get(item.produit_id);
-          return departement === 'cuisine'
-            ? categorie === 'nourriture'
-            : categorie !== 'nourriture';
-        }),
+        items
+          .filter((item) => item.quantite > 0)
+          .filter((item) => {
+            const categorie = categorieParProduit.get(item.produit_id);
+            return departement === 'cuisine'
+              ? categorie === 'nourriture'
+              : categorie !== 'nourriture';
+          }),
       );
     } catch (err) {
       console.error('Erreur lors du chargement des articles retournables:', err);
@@ -614,21 +649,28 @@ export function RetoursScreen() {
                     </p>
                   </div>
                 </div>
-                <span
-                  className={`inline-block px-2 py-0.5 mb-2 rounded text-[10px] font-bold uppercase tracking-wider ${
-                    facture.numero_facture.includes('-CUI')
-                      ? 'bg-orange-500/10 text-orange-500'
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  <span
+                    className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                      facture.numero_facture.includes('-CUI')
+                        ? 'bg-orange-500/10 text-orange-500'
+                        : facture.numero_facture.includes('-BAR')
+                          ? 'bg-blue-500/10 text-blue-500'
+                          : 'bg-neutral-500/10 text-neutral-500'
+                    }`}
+                  >
+                    {facture.numero_facture.includes('-CUI')
+                      ? '🍲 Cuisine'
                       : facture.numero_facture.includes('-BAR')
-                        ? 'bg-blue-500/10 text-blue-500'
-                        : 'bg-neutral-500/10 text-neutral-500'
-                  }`}
-                >
-                  {facture.numero_facture.includes('-CUI')
-                    ? '🍲 Cuisine'
-                    : facture.numero_facture.includes('-BAR')
-                      ? '🍷 Bar'
-                      : 'Global'}
-                </span>
+                        ? '🍷 Bar'
+                        : 'Global'}
+                  </span>
+                  {(echangesParFacture.get(facture.id) || []).length > 0 && (
+                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-600">
+                      {echangesParFacture.get(facture.id)!.length} échange(s) effectué(s)
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center justify-between text-sm mb-2">
                   <span className="text-neutral-500 dark:text-neutral-400">
                     {format(new Date(facture.date_generation), 'dd MMM yyyy', { locale: fr })}

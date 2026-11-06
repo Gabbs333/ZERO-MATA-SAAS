@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { formatMontant } from '../utils/format';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Package, Receipt, Search, Calendar, ArrowLeftCircle, User, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { Package, Receipt, Search, Calendar, ArrowLeftCircle, ArrowRightLeft, User, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
 
 interface RetourItem {
   id: string;
@@ -80,6 +80,29 @@ interface PendingReturnGroup {
   totalMontant: number;
 }
 
+interface Echange {
+  id: string;
+  numero_echange: string;
+  facture_id: string;
+  commande_id: string;
+  montant_retourne: number;
+  montant_ajoute: number;
+  difference_montant: number;
+  motif: string | null;
+  utilisateur_id: string;
+  date_echange: string;
+  etablissement_id: string;
+  factures?: {
+    numero_facture: string;
+    montant_total: number;
+  } | null;
+  commandes?: CommandeRetour | null;
+  profiles?: {
+    nom: string;
+    prenom: string;
+  } | null;
+}
+
 /**
  * Libellé de localisation d'une commande.
  * Depuis la prise de commande au comptoir, `commandes.table_id` peut être NULL :
@@ -98,9 +121,11 @@ export function RetoursScreen() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('week');
-  const [activeTab, setActiveTab] = useState<'history' | 'pending'>('history');
+  const [activeTab, setActiveTab] = useState<'history' | 'pending' | 'exchanges'>('history');
   const [selectedPendingGroup, setSelectedPendingGroup] = useState<PendingReturnGroup | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [echangeSearch, setEchangeSearch] = useState('');
+  const [echangeDateFilter, setEchangeDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('month');
 
   const { data: retours, isLoading } = useSupabaseQuery<Retour[]>(
     ['retours', profile?.etablissement_id],
@@ -167,6 +192,40 @@ export function RetoursScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
+  const {
+    data: echanges,
+    isLoading: isEchangesLoading,
+    error: echangesError,
+  } = useSupabaseQuery<Echange[]>(
+    ['echanges', profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+
+      const { data, error } = await supabase
+        .from('echanges')
+        .select(`
+          *,
+          factures (
+            numero_facture,
+            montant_total
+          ),
+          commandes (
+            numero_commande,
+            canal,
+            type_service,
+            tables (numero),
+            profiles!serveuse_id (nom, prenom)
+          ),
+          profiles!utilisateur_id (nom, prenom)
+        `)
+        .eq('etablissement_id', profile.etablissement_id)
+        .order('date_echange', { ascending: false });
+
+      return { data: data as unknown as Echange[], error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
   const groupedPendingReturns = retoursEnAttente?.reduce((acc, item) => {
     if (!acc[item.facture_id]) {
       acc[item.facture_id] = {
@@ -210,6 +269,37 @@ export function RetoursScreen() {
 
   const totalRetours = retours?.reduce((sum, r) => sum + (r.montant_total_retour || 0), 0) || 0;
   const totalPendingRetours = retoursEnAttente?.reduce((sum, r) => sum + r.montant_ligne, 0) || 0;
+
+  // ─── Échanges (lecture seule) ───────────────────────────────────────────
+  const filteredEchanges = echanges?.filter((echange) => {
+    const term = echangeSearch.toLowerCase();
+    const matchesSearch =
+      (echange.numero_echange ?? '').toLowerCase().includes(term) ||
+      (echange.factures?.numero_facture ?? '').toLowerCase().includes(term) ||
+      (echange.commandes?.numero_commande ?? '').toLowerCase().includes(term) ||
+      (echange.commandes?.profiles?.prenom ?? '').toLowerCase().includes(term) ||
+      (echange.commandes?.profiles?.nom ?? '').toLowerCase().includes(term) ||
+      (echange.profiles?.prenom ?? '').toLowerCase().includes(term) ||
+      (echange.profiles?.nom ?? '').toLowerCase().includes(term);
+
+    let matchesDate = true;
+    if (echangeDateFilter !== 'all') {
+      const echangeDate = new Date(echange.date_echange);
+      const now = new Date();
+      if (echangeDateFilter === 'today') {
+        matchesDate = echangeDate.toDateString() === now.toDateString();
+      } else if (echangeDateFilter === 'week') {
+        matchesDate = echangeDate >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (echangeDateFilter === 'month') {
+        matchesDate = echangeDate >= new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      }
+    }
+
+    return matchesSearch && matchesDate;
+  });
+
+  const totalEchangesAjoutes = echanges?.reduce((sum, e) => sum + (e.montant_ajoute || 0), 0) || 0;
+  const totalEchangesRetournes = echanges?.reduce((sum, e) => sum + (e.montant_retourne || 0), 0) || 0;
 
   const handleValidateRetour = async (factureId: string) => {
     if (!factureId) return;
@@ -272,7 +362,7 @@ export function RetoursScreen() {
           <div>
             <h1 className="text-2xl font-bold text-primary dark:text-white font-display">Gestion des Retours</h1>
             <p className="text-neutral-500 dark:text-neutral-400 text-sm">
-              Validez les retours et consultez l'historique
+              Validez les retours, consultez l'historique et la traçabilité des échanges
             </p>
           </div>
 
@@ -317,6 +407,22 @@ export function RetoursScreen() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => { setActiveTab('exchanges'); setSelectedPendingGroup(null); }}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
+              activeTab === 'exchanges'
+                ? 'bg-primary dark:bg-dark-accent text-white'
+                : 'bg-neutral-100 dark:bg-white/5 text-neutral-500 dark:text-neutral-400'
+            }`}
+          >
+            <ArrowRightLeft className="w-4 h-4" />
+            Échanges
+            {echanges && echanges.length > 0 && (
+              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300 rounded-full text-xs">
+                {echanges.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {activeTab === 'history' && (
@@ -344,6 +450,42 @@ export function RetoursScreen() {
                   onClick={() => setDateFilter(filter.value)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     dateFilter === filter.value
+                      ? 'bg-primary dark:bg-dark-accent text-white'
+                      : 'bg-neutral-100 dark:bg-white/5 text-neutral-500 dark:text-neutral-400'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'exchanges' && (
+          <div className="mt-6 space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Rechercher par numéro d'échange, facture, commande ou agent..."
+                value={echangeSearch}
+                onChange={(e) => setEchangeSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary dark:focus:border-dark-accent rounded-xl text-primary dark:text-white placeholder-neutral-400 focus:ring-4 focus:ring-primary/10 dark:focus:ring-dark-accent/10 transition-all outline-none"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {([
+                { value: 'today', label: "Aujourd'hui" },
+                { value: 'week', label: '7 jours' },
+                { value: 'month', label: '30 jours' },
+                { value: 'all', label: 'Tout' }
+              ] as const).map((filter) => (
+                <button
+                  key={filter.value}
+                  onClick={() => setEchangeDateFilter(filter.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    echangeDateFilter === filter.value
                       ? 'bg-primary dark:bg-dark-accent text-white'
                       : 'bg-neutral-100 dark:bg-white/5 text-neutral-500 dark:text-neutral-400'
                   }`}
@@ -420,6 +562,129 @@ export function RetoursScreen() {
                   <div className="col-span-full flex flex-col items-center justify-center py-12 text-neutral-400 dark:text-neutral-500">
                     <Package className="w-12 h-12 mb-2 opacity-50" />
                     <p>Aucun retour trouvé</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : activeTab === 'exchanges' ? (
+          <>
+            {/* Totaux échanges (période filtrée) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              <div className="bg-white dark:bg-dark-card/40 rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+                <p className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Échanges</p>
+                <p className="text-xl font-bold text-primary dark:text-white">{filteredEchanges?.length ?? 0}</p>
+              </div>
+              <div className="bg-white dark:bg-dark-card/40 rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+                <p className="text-[10px] uppercase font-bold text-semantic-red tracking-wider">Valeur retournée</p>
+                <p className="text-xl font-bold text-semantic-red">{formatMontant(totalEchangesRetournes)}</p>
+              </div>
+              <div className="bg-white dark:bg-dark-card/40 rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+                <p className="text-[10px] uppercase font-bold text-semantic-green tracking-wider">Valeur ajoutée</p>
+                <p className="text-xl font-bold text-semantic-green">{formatMontant(totalEchangesAjoutes)}</p>
+              </div>
+              <div className="bg-white dark:bg-dark-card/40 rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+                <p className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Différence nette</p>
+                <p className={`text-xl font-bold ${totalEchangesAjoutes - totalEchangesRetournes >= 0 ? 'text-semantic-green' : 'text-semantic-red'}`}>
+                  {formatMontant(totalEchangesAjoutes - totalEchangesRetournes)}
+                </p>
+              </div>
+            </div>
+
+            {isEchangesLoading ? (
+              <div className="flex justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary dark:border-white"></div>
+              </div>
+            ) : echangesError ? (
+              <div className="flex flex-col items-center justify-center py-12 text-semantic-red dark:text-red-400">
+                <AlertCircle className="w-12 h-12 mb-2 opacity-70" />
+                <p className="font-bold">Impossible de charger les échanges</p>
+                <p className="text-sm text-center mt-1 max-w-md">{(echangesError as Error).message}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredEchanges?.map((echange) => (
+                  <div
+                    key={echange.id}
+                    className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden hover:border-purple-500/30 transition-all"
+                  >
+                    <div className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="bg-purple-500/10 text-purple-600 dark:text-purple-400 size-10 rounded-lg flex items-center justify-center">
+                          <ArrowRightLeft className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-sm text-primary dark:text-white">
+                            {echange.numero_echange}
+                          </h3>
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                            {echange.factures?.numero_facture ?? '—'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
+                          <Receipt className="w-4 h-4" />
+                          <span>{echange.commandes?.numero_commande ?? '—'}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
+                          <Package className="w-4 h-4" />
+                          <span>{formatLocalisation(echange.commandes)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
+                          <User className="w-4 h-4" />
+                          <span>
+                            {echange.profiles?.prenom ?? ''} {echange.profiles?.nom ?? ''}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
+                          <Calendar className="w-4 h-4" />
+                          <span>{format(new Date(echange.date_echange), 'dd MMM yyyy HH:mm', { locale: fr })}</span>
+                        </div>
+                      </div>
+
+                      {echange.motif && (
+                        <div className="mt-3 p-2 bg-neutral-50 dark:bg-white/5 rounded-lg">
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                            <span className="font-bold">Motif:</span> {echange.motif}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="mt-4 pt-3 border-t border-neutral-200 dark:border-white/5 space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-neutral-500 dark:text-neutral-400">Retourné</span>
+                          <span className="font-bold text-semantic-red">− {formatMontant(echange.montant_retourne)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-neutral-500 dark:text-neutral-400">Ajouté</span>
+                          <span className="font-bold text-semantic-green">+ {formatMontant(echange.montant_ajoute)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm pt-1 border-t border-neutral-200 dark:border-white/5">
+                          <span className="text-neutral-500 dark:text-neutral-400">Différence</span>
+                          <span
+                            className={`font-bold ${
+                              echange.difference_montant > 0
+                                ? 'text-semantic-red'
+                                : echange.difference_montant < 0
+                                  ? 'text-semantic-green'
+                                  : 'text-neutral-500'
+                            }`}
+                          >
+                            {echange.difference_montant > 0 ? '+' : ''}
+                            {formatMontant(echange.difference_montant)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {filteredEchanges?.length === 0 && (
+                  <div className="col-span-full flex flex-col items-center justify-center py-12 text-neutral-400 dark:text-neutral-500">
+                    <ArrowRightLeft className="w-12 h-12 mb-2 opacity-50" />
+                    <p>Aucun échange sur cette période</p>
                   </div>
                 )}
               </div>

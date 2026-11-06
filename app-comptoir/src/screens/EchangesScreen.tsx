@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
@@ -18,8 +18,10 @@ interface FactureWithDetails extends Facture {
   commandes: {
     id: string;
     numero_commande: string;
-    tables: { numero: number };
-    profiles: { nom: string; prenom: string };
+    tables: { numero: number } | null;
+    canal?: string | null;
+    type_service?: string | null;
+    profiles: { nom: string; prenom: string } | null;
     commande_items: CommandeItemAvecRetour[];
   };
 }
@@ -52,6 +54,41 @@ interface ItemAAjouter {
   nom_produit: string;
   quantite: number;
   prix_unitaire: number;
+}
+
+/** Échange déjà enregistré (traçabilité affichée dans l'écran Échanges) */
+interface EchangeResume {
+  id: string;
+  facture_id: string;
+  numero_echange: string;
+  date_echange: string;
+  montant_retourne: number;
+  montant_ajoute: number;
+  difference_montant: number;
+  motif: string | null;
+}
+
+/** Libellé de localisation : une vente comptoir n'a pas de table. */
+function formatLocalisation(commande: {
+  tables?: { numero: number } | null;
+  canal?: string | null;
+  type_service?: string | null;
+} | null | undefined): string {
+  if (!commande) return '—';
+  if (commande.tables?.numero != null) return `Table ${commande.tables.numero}`;
+  if (commande.type_service === 'emporter') return 'À emporter';
+  if (commande.canal === 'comptoir') return 'Comptoir';
+  return 'Vente directe';
+}
+
+/**
+ * Statut de paiement de la facture (ne pas confondre avec l'état de l'échange :
+ * un échange est immédiat et ne reste jamais « en attente »).
+ */
+function paiementLabel(statut: string): string {
+  if (statut === 'payee') return 'Payée';
+  if (statut === 'partiellement_payee') return 'Partielle';
+  return 'Non payée';
 }
 
 // ─── Composant ─────────────────────────────────────────────────────────────
@@ -114,6 +151,31 @@ export function EchangesScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
+  // Historique des échanges déjà effectués (traçabilité par facture)
+  const { data: echanges, refetch: refetchEchanges } = useSupabaseQuery<EchangeResume[]>(
+    ['echanges', profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('echanges')
+        .select('id, facture_id, numero_echange, date_echange, montant_retourne, montant_ajoute, difference_montant, motif')
+        .eq('etablissement_id', profile.etablissement_id)
+        .order('date_echange', { ascending: false });
+      return { data: (data as EchangeResume[]) || [], error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  const echangesParFacture = useMemo(() => {
+    const map = new Map<string, EchangeResume[]>();
+    for (const echange of echanges || []) {
+      const list = map.get(echange.facture_id) || [];
+      list.push(echange);
+      map.set(echange.facture_id, list);
+    }
+    return map;
+  }, [echanges]);
+
   // Filtrer les factures
   const filteredFactures = factures?.filter(f => {
     const matchesSearch =
@@ -166,7 +228,10 @@ export function EchangesScreen() {
       .select('*')
       .eq('commande_id', facture.commandes.id)
       .order('nom_produit');
-    setEnrichedItems((data as unknown as CommandeItemAvecRetour[]) || []);
+    const items = (data as unknown as CommandeItemAvecRetour[]) || [];
+    // Les articles déjà intégralement retournés/échangés (quantité 0) ne sont
+    // plus des articles à traiter : on ne les affiche pas.
+    setEnrichedItems(items.filter((item) => item.quantite > 0));
   };
 
   const handleToggleRetour = (item: CommandeItemAvecRetour) => {
@@ -266,7 +331,9 @@ export function EchangesScreen() {
         setItemsARetourner([]);
         setItemsAAjouter([]);
         setMotif('');
+        setEnrichedItems([]);
         refetch();
+        refetchEchanges();
       }, 2500);
     } catch (error: any) {
       console.error('Échange error:', error);
@@ -357,7 +424,10 @@ export function EchangesScreen() {
                     {selectedFacture.commandes?.numero_commande}
                   </h2>
                   <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                    Table {selectedFacture.commandes?.tables?.numero} • {selectedFacture.commandes?.profiles?.prenom} {selectedFacture.commandes?.profiles?.nom}
+                    {formatLocalisation(selectedFacture.commandes)} • {selectedFacture.commandes?.profiles?.prenom} {selectedFacture.commandes?.profiles?.nom}
+                  </p>
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
+                    {selectedFacture.numero_facture}
                   </p>
                 </div>
                 <div className="text-right">
@@ -365,6 +435,28 @@ export function EchangesScreen() {
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">Total facture</p>
                 </div>
               </div>
+
+              {/* Historique des échanges déjà effectués sur cette facture */}
+              {(echangesParFacture.get(selectedFacture.id) || []).length > 0 && (
+                <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-white/10 space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                    Échanges déjà effectués ({echangesParFacture.get(selectedFacture.id)!.length})
+                  </p>
+                  {echangesParFacture.get(selectedFacture.id)!.slice(0, 3).map((echange) => (
+                    <div
+                      key={echange.id}
+                      className="flex flex-wrap items-center justify-between gap-2 text-xs bg-neutral-50 dark:bg-white/5 rounded-lg px-3 py-2"
+                    >
+                      <span className="font-bold text-neutral-700 dark:text-neutral-200">{echange.numero_echange}</span>
+                      <span className="text-neutral-500 dark:text-neutral-400">
+                        {format(new Date(echange.date_echange), 'dd MMM yyyy HH:mm', { locale: fr })}
+                      </span>
+                      <span className="text-semantic-red font-bold">− {formatPrice(echange.montant_retourne)}</span>
+                      <span className="text-green-600 font-bold">+ {formatPrice(echange.montant_ajoute)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Grille : Articles à retourner (gauche) | Produits à ajouter (droite) */}
@@ -619,7 +711,10 @@ export function EchangesScreen() {
                         {facture.commandes?.numero_commande}
                       </h3>
                       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                        Table {facture.commandes?.tables?.numero}
+                        {formatLocalisation(facture.commandes)}
+                      </p>
+                      <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-0.5">
+                        {facture.numero_facture}
                       </p>
                     </div>
                   </div>
@@ -629,16 +724,22 @@ export function EchangesScreen() {
                     </span>
                     <span className="font-bold text-neutral-900 dark:text-white">{formatPrice(facture.montant_total)}</span>
                   </div>
-                  <div className="mt-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${
                       facture.statut === 'payee'
                         ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
                         : facture.statut === 'partiellement_payee'
                           ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
-                          : 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400'
+                          : 'bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-neutral-300'
                     }`}>
-                      {facture.statut === 'payee' ? 'Payée' : facture.statut === 'partiellement_payee' ? 'Partielle' : 'En attente'}
+                      {paiementLabel(facture.statut)}
                     </span>
+                    {(echangesParFacture.get(facture.id) || []).length > 0 && (
+                      <span className="px-2 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300 flex items-center gap-1">
+                        <ArrowRightLeft className="w-3 h-3" />
+                        {echangesParFacture.get(facture.id)!.length} échange(s)
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
