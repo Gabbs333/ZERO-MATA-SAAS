@@ -20,7 +20,7 @@ import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { useRealtimeSubscription } from '../hooks/useRealtimeSubscription';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
-import { formatMontant } from '../utils/format';
+import { formatMontant, formatModePaiement } from '../utils/format';
 import { useValidateRetour, useRejectRetour } from '../hooks/useSupabaseMutation';
 import {
   Package,
@@ -147,6 +147,23 @@ export function DashboardScreen() {
       }
 
       return { data: data || [], error: null };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  // Ventes à crédit de la période (factures marquées credit_sur)
+  const { data: creditFacturesData } = useSupabaseQuery(
+    ['dashboard_credit_factures', dateRange.start.toISOString(), dateRange.end.toISOString(), profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('factures')
+        .select('id, montant_total, montant_paye, montant_restant, credit_sur, statut, date_generation')
+        .eq('etablissement_id', profile.etablissement_id)
+        .eq('credit_sur', true)
+        .gte('date_generation', dateRange.start.toISOString())
+        .lte('date_generation', dateRange.end.toISOString());
+      return { data: data || [], error };
     },
     { enabled: !!profile?.etablissement_id }
   );
@@ -389,12 +406,35 @@ export function DashboardScreen() {
       total += enc.montant;
     });
 
-    return Array.from(modeMap.entries()).map(([mode, montant]) => ({
-      mode_paiement: mode,
-      montant_total: montant,
-      pourcentage_total: total > 0 ? Math.round((montant / total) * 100) : 0
-    }));
+    // Les modes usuels restent affichés même à 0 pour un rapport explicite
+    ['especes', 'mobile_money', 'carte_bancaire'].forEach((mode) => {
+      if (!modeMap.has(mode)) modeMap.set(mode, 0);
+    });
+
+    return Array.from(modeMap.entries())
+      .map(([mode, montant]) => ({
+        mode_paiement: mode,
+        montant_total: montant,
+        pourcentage_total: total > 0 ? Math.round((montant / total) * 100) : 0,
+      }))
+      .sort((a, b) => b.montant_total - a.montant_total);
   }, [encaissementsData]);
+
+  const totalEncaisseModes = useMemo(
+    () => paymentModes.reduce((sum, m) => sum + m.montant_total, 0),
+    [paymentModes]
+  );
+
+  // Ventes à crédit : montant facturé à crédit sur la période + restant dû actuel
+  const creditSales = useMemo(() => {
+    const list = (creditFacturesData || []) as any[];
+    return {
+      count: list.length,
+      montant_total: list.reduce((sum, f) => sum + (f.montant_total || 0), 0),
+      montant_paye: list.reduce((sum, f) => sum + (f.montant_paye || 0), 0),
+      montant_restant: list.reduce((sum, f) => sum + (f.montant_restant || 0), 0),
+    };
+  }, [creditFacturesData]);
   // const paymentLoading = encLoading;
 
   // Fetch current debt for the period
@@ -1026,74 +1066,99 @@ export function DashboardScreen() {
 
         {/* Payment Methods */}
         <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-3xl p-5 border border-neutral-200 dark:border-white/5 shadow-soft overflow-hidden">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-primary dark:text-white text-base font-bold leading-tight tracking-tight">Modes de Paiement</h3>
-              <p className="text-[10px] text-neutral-400 dark:text-neutral-500 font-bold uppercase tracking-widest mt-0.5">Répartition du CA</p>
+              <h3 className="text-primary dark:text-white text-base font-bold leading-tight tracking-tight">Encaissements par mode</h3>
+              <p className="text-[10px] text-neutral-400 dark:text-neutral-500 font-bold uppercase tracking-widest mt-0.5">Montants exacts (net des remboursements)</p>
+            </div>
+            <span className="text-sm font-black text-primary dark:text-white whitespace-nowrap">
+              {formatMontant(totalEncaisseModes)}
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="w-full sm:w-1/3 h-[150px]">
+              {encLoading ? (
+                <div className="h-full w-full flex items-center justify-center">
+                  <div className="size-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+                </div>
+              ) : totalEncaisseModes > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={paymentModes}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={65}
+                      paddingAngle={5}
+                      dataKey="montant_total"
+                    >
+                      {paymentModes.map((_: any, index: number) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={[ '#3B82F6', '#10B981', '#F59E0B', '#EF4444' ][index % 4]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        border: 'none',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 'bold'
+                      }}
+                      formatter={(val: number) => formatMontant(val)}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full w-full flex flex-col items-center justify-center text-neutral-400 gap-2">
+                  <CreditCard className="w-8 h-8 opacity-20" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Aucun encaissement</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 space-y-2.5">
+              {paymentModes.map((mode: any, index: number) => (
+                <div key={mode.mode_paiement} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="size-2 shrink-0 rounded-full" style={{ backgroundColor: [ '#3B82F6', '#10B981', '#F59E0B', '#EF4444' ][index % 4] }}></div>
+                    <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest truncate">
+                      {formatModePaiement(mode.mode_paiement)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2 shrink-0">
+                    <span className="text-xs font-black text-primary dark:text-white">
+                      {formatMontant(mode.montant_total)}
+                    </span>
+                    <span className="text-[10px] text-neutral-400">{mode.pourcentage_total}%</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="h-[200px] w-full flex items-center">
-            {advancedLoading ? (
-              <div className="h-full w-full flex items-center justify-center">
-                <div className="size-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+          {/* Ventes à crédit : montant des factures marquées credit_sur */}
+          <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-white/10 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="rounded-full p-2 bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                <CreditCard className="w-4 h-4" />
               </div>
-            ) : !paymentModes || paymentModes.length === 0 ? (
-              <div className="h-full w-full flex flex-col items-center justify-center text-neutral-400 gap-2">
-                <CreditCard className="w-8 h-8 opacity-20" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Aucune donnée</span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">
+                  Ventes à crédit
+                </p>
+                <p className="text-[10px] text-neutral-400 truncate">
+                  {creditSales.count} facture(s) • Restant dû : {formatMontant(creditSales.montant_restant)}
+                </p>
               </div>
-            ) : (
-              <>
-                <div className="w-1/2 h-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={paymentModes}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="montant_total"
-                      >
-                        {paymentModes.map((_: any, index: number) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={[ '#3B82F6', '#10B981', '#F59E0B', '#EF4444' ][index % 4]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                          border: 'none',
-                          borderRadius: '12px',
-                          fontSize: '11px',
-                          fontWeight: 'bold'
-                        }}
-                        formatter={(val: number) => formatMontant(val)}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="w-1/2 flex flex-col gap-2 pl-4">
-                  {paymentModes.map((mode: any, index: number) => (
-                    <div key={mode.mode_paiement} className="flex items-center gap-2">
-                      <div className="size-2 rounded-full" style={{ backgroundColor: [ '#3B82F6', '#10B981', '#F59E0B', '#EF4444' ][index % 4] }}></div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest leading-none capitalize">
-                          {mode.mode_paiement.replace('_', ' ')}
-                        </span>
-                        <span className="text-xs font-black text-primary dark:text-white">
-                          {mode.pourcentage_total}%
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+            </div>
+            <span className="text-sm font-black text-purple-600 dark:text-purple-400 whitespace-nowrap">
+              {formatMontant(creditSales.montant_total)}
+            </span>
           </div>
         </div>
       </div>

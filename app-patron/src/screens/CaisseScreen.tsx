@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -71,6 +71,57 @@ export function CaisseScreen() {
 
   const totalEntrees = mouvements?.reduce((sum, m) => sum + (m.type === 'entree' ? m.montant : 0), 0) || 0;
   const totalSorties = mouvements?.reduce((sum, m) => sum + (m.type === 'sortie' ? m.montant : 0), 0) || 0;
+
+  // Détail des encaissements du jour par mode de paiement
+  const { data: encaissementsJour } = useSupabaseQuery<{ mode_paiement: string; montant: number }[]>(
+    ['caisse_encaissements_jour', selectedDate, profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('encaissements')
+        .select('mode_paiement, montant')
+        .eq('etablissement_id', profile.etablissement_id)
+        .gte('date_encaissement', `${selectedDate}T00:00:00`)
+        .lte('date_encaissement', `${selectedDate}T23:59:59`);
+      return { data: (data as { mode_paiement: string; montant: number }[]) || [], error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  // Ventes à crédit de la journée (factures marquées credit_sur)
+  const { data: creditJour } = useSupabaseQuery<{ montant_total: number; montant_restant: number }[]>(
+    ['caisse_credit_jour', selectedDate, profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('factures')
+        .select('montant_total, montant_restant')
+        .eq('etablissement_id', profile.etablissement_id)
+        .eq('credit_sur', true)
+        .gte('date_generation', `${selectedDate}T00:00:00`)
+        .lte('date_generation', `${selectedDate}T23:59:59`);
+      return { data: (data as { montant_total: number; montant_restant: number }[]) || [], error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  const encaissementsParMode = useMemo(() => {
+    const map = new Map<string, number>();
+    (encaissementsJour || []).forEach((e) => {
+      map.set(e.mode_paiement, (map.get(e.mode_paiement) || 0) + e.montant);
+    });
+    return map;
+  }, [encaissementsJour]);
+
+  const totalEspeces = encaissementsParMode.get('especes') || 0;
+  const totalMobileMoney = encaissementsParMode.get('mobile_money') || 0;
+  const totalCarte =
+    (encaissementsParMode.get('carte_bancaire') || 0) + (encaissementsParMode.get('carte') || 0);
+  const totalCheque = encaissementsParMode.get('cheque') || 0;
+  const totalEncaisseJour = totalEspeces + totalMobileMoney + totalCarte + totalCheque;
+
+  const creditJourTotal = (creditJour || []).reduce((sum, f) => sum + (f.montant_total || 0), 0);
+  const creditJourRestant = (creditJour || []).reduce((sum, f) => sum + (f.montant_restant || 0), 0);
 
   const getModeIcon = (mode: string) => {
     switch (mode) {
@@ -171,6 +222,67 @@ export function CaisseScreen() {
             </div>
           </div>
         )}
+
+        {/* Encaissements par mode de paiement */}
+        <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-5 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-bold text-neutral-900 dark:text-white">Encaissements par mode de paiement</h3>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                Montants exacts du {format(new Date(selectedDate + 'T12:00:00'), 'dd MMMM yyyy', { locale: fr })}
+              </p>
+            </div>
+            <span className="text-lg font-black text-primary dark:text-white whitespace-nowrap">
+              {formatMontant(totalEncaisseJour)}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Banknote className="w-4 h-4 text-amber-600" />
+                <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Espèces</span>
+              </div>
+              <p className="text-lg font-bold text-neutral-900 dark:text-white">{formatMontant(totalEspeces)}</p>
+              <p className="text-[10px] text-neutral-400">
+                {totalEncaisseJour > 0 ? Math.round((totalEspeces / totalEncaisseJour) * 100) : 0}% des encaissements
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Smartphone className="w-4 h-4 text-indigo-600" />
+                <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Mobile Money</span>
+              </div>
+              <p className="text-lg font-bold text-neutral-900 dark:text-white">{formatMontant(totalMobileMoney)}</p>
+              <p className="text-[10px] text-neutral-400">
+                {totalEncaisseJour > 0 ? Math.round((totalMobileMoney / totalEncaisseJour) * 100) : 0}% des encaissements
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-neutral-200 dark:border-white/5 p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <CreditCard className="w-4 h-4 text-blue-600" />
+                <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Carte / Chèque</span>
+              </div>
+              <p className="text-lg font-bold text-neutral-900 dark:text-white">{formatMontant(totalCarte + totalCheque)}</p>
+              <p className="text-[10px] text-neutral-400">
+                Carte : {formatMontant(totalCarte)} • Chèque : {formatMontant(totalCheque)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-purple-200 dark:border-purple-500/20 bg-purple-50/50 dark:bg-purple-500/5 p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Receipt className="w-4 h-4 text-purple-600" />
+                <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Ventes à crédit</span>
+              </div>
+              <p className="text-lg font-bold text-purple-600 dark:text-purple-400">{formatMontant(creditJourTotal)}</p>
+              <p className="text-[10px] text-neutral-400">
+                {(creditJour || []).length} facture(s) • Restant dû : {formatMontant(creditJourRestant)}
+              </p>
+            </div>
+          </div>
+        </div>
 
         {/* Liste des mouvements */}
         <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 overflow-hidden">

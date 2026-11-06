@@ -59,6 +59,7 @@ export function formatModePaiement(mode: string): string {
   const modes: Record<string, string> = {
     especes: 'Espèces',
     carte: 'Carte bancaire',
+    carte_bancaire: 'Carte bancaire',
     mobile_money: 'Mobile Money',
     cheque: 'Chèque',
   };
