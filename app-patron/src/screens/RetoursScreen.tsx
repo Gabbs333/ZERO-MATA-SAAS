@@ -19,6 +19,14 @@ interface RetourItem {
   montant_ligne: number;
 }
 
+interface CommandeRetour {
+  numero_commande: string;
+  tables: { numero: number } | null;
+  canal?: string | null;
+  type_service?: string | null;
+  profiles?: { nom: string; prenom: string } | null;
+}
+
 interface Retour {
   id: string;
   numero_retour: string;
@@ -35,11 +43,7 @@ interface Retour {
     montant_total: number;
     statut: string;
   };
-  commandes?: {
-    numero_commande: string;
-    tables: { numero: number };
-    profiles: { nom: string; prenom: string };
-  };
+  commandes?: CommandeRetour | null;
 }
 
 interface RetourEnAttente {
@@ -60,15 +64,11 @@ interface RetourEnAttente {
     numero_facture: string;
     montant_total: number;
   };
-  commandes: {
-    numero_commande: string;
-    tables: { numero: number };
-    profiles: { nom: string; prenom: string };
-  };
+  commandes: CommandeRetour | null;
   profiles: {
     nom: string;
     prenom: string;
-  };
+  } | null;
 }
 
 interface PendingReturnGroup {
@@ -78,6 +78,19 @@ interface PendingReturnGroup {
   utilisateur: RetourEnAttente['profiles'];
   date_demande: string;
   totalMontant: number;
+}
+
+/**
+ * Libellé de localisation d'une commande.
+ * Depuis la prise de commande au comptoir, `commandes.table_id` peut être NULL :
+ * l'embed `tables` vaut alors `null` et tout accès direct plantait l'écran.
+ */
+function formatLocalisation(commande: CommandeRetour | null | undefined): string {
+  if (!commande) return '—';
+  if (commande.tables?.numero != null) return `Table ${commande.tables.numero}`;
+  if (commande.type_service === 'emporter') return 'À emporter';
+  if (commande.canal === 'comptoir') return 'Comptoir';
+  return 'Vente directe';
 }
 
 export function RetoursScreen() {
@@ -105,6 +118,8 @@ export function RetoursScreen() {
           ),
           commandes (
             numero_commande,
+            canal,
+            type_service,
             tables (numero),
             profiles!serveuse_id (nom, prenom)
           )
@@ -117,7 +132,12 @@ export function RetoursScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
-  const { data: retoursEnAttente, refetch: refetchPending } = useSupabaseQuery<RetourEnAttente[]>(
+  const {
+    data: retoursEnAttente,
+    refetch: refetchPending,
+    error: pendingError,
+    isLoading: isPendingLoading,
+  } = useSupabaseQuery<RetourEnAttente[]>(
     ['retours_en_attente', profile?.etablissement_id],
     async () => {
       if (!profile?.etablissement_id) return { data: [], error: null };
@@ -132,6 +152,8 @@ export function RetoursScreen() {
           ),
           commandes (
             numero_commande,
+            canal,
+            type_service,
             tables (numero),
             profiles!serveuse_id (nom, prenom)
           ),
@@ -358,7 +380,7 @@ export function RetoursScreen() {
                             {retour.numero_retour}
                           </h3>
                           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                            {retour.commandes?.numero_commande}
+                            {retour.commandes?.numero_commande ?? '—'}
                           </p>
                         </div>
                       </div>
@@ -366,11 +388,11 @@ export function RetoursScreen() {
                       <div className="space-y-2 text-sm">
                         <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
                           <User className="w-4 h-4" />
-                          <span>{retour.commandes?.profiles?.prenom} {retour.commandes?.profiles?.nom}</span>
+                          <span>{retour.commandes?.profiles?.prenom ?? ''} {retour.commandes?.profiles?.nom ?? ''}</span>
                         </div>
                         <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
                           <Receipt className="w-4 h-4" />
-                          <span>Table {retour.commandes?.tables?.numero}</span>
+                          <span>{formatLocalisation(retour.commandes)}</span>
                         </div>
                         <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
                           <Calendar className="w-4 h-4" />
@@ -417,10 +439,12 @@ export function RetoursScreen() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-primary dark:text-white">
-                    {selectedPendingGroup.commande.numero_commande}
+                    {selectedPendingGroup.commande?.numero_commande ?? '—'}
                   </h2>
                   <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                    Table {selectedPendingGroup.commande.tables.numero} • Demandé par {selectedPendingGroup.utilisateur.prenom} {selectedPendingGroup.utilisateur.nom}
+                    {formatLocalisation(selectedPendingGroup.commande)} • Demandé par{' '}
+                    {selectedPendingGroup.utilisateur?.prenom ?? ''}{' '}
+                    {selectedPendingGroup.utilisateur?.nom ?? ''}
                   </p>
                 </div>
                 <div className="text-right">
@@ -448,7 +472,7 @@ export function RetoursScreen() {
                 ))}
               </div>
 
-              {selectedPendingGroup.items[0].motif && (
+              {selectedPendingGroup.items[0]?.motif && (
                 <div className="p-3 bg-neutral-50 dark:bg-white/5 rounded-lg mb-6">
                   <p className="text-sm text-neutral-500 dark:text-neutral-400">
                     <span className="font-bold">Motif:</span> {selectedPendingGroup.items[0].motif}
@@ -496,10 +520,10 @@ export function RetoursScreen() {
                       </div>
                       <div>
                         <h3 className="font-bold text-sm text-primary dark:text-white">
-                          {group.commande.numero_commande}
+                          {group.commande?.numero_commande ?? '—'}
                         </h3>
                         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                          Table {group.commande.tables.numero}
+                          {formatLocalisation(group.commande)}
                         </p>
                       </div>
                     </div>
@@ -507,7 +531,9 @@ export function RetoursScreen() {
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
                         <User className="w-4 h-4" />
-                        <span>{group.utilisateur.prenom} {group.utilisateur.nom}</span>
+                        <span>
+                          {group.utilisateur?.prenom ?? ''} {group.utilisateur?.nom ?? ''}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 text-neutral-500 dark:text-neutral-400">
                         <Calendar className="w-4 h-4" />
@@ -527,6 +553,22 @@ export function RetoursScreen() {
                   </div>
                 </div>
               ))
+            ) : isPendingLoading ? (
+              <div className="col-span-full flex justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary dark:border-white"></div>
+              </div>
+            ) : pendingError ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-12 text-semantic-red dark:text-red-400">
+                <AlertCircle className="w-12 h-12 mb-2 opacity-70" />
+                <p className="font-bold">Impossible de charger les retours en attente</p>
+                <p className="text-sm text-center mt-1 max-w-md">{(pendingError as Error).message}</p>
+                <button
+                  onClick={() => refetchPending()}
+                  className="mt-3 px-4 py-2 rounded-lg bg-primary dark:bg-dark-accent text-white text-sm font-bold"
+                >
+                  Réessayer
+                </button>
+              </div>
             ) : (
               <div className="col-span-full flex flex-col items-center justify-center py-12 text-neutral-400 dark:text-neutral-500">
                 <Clock className="w-12 h-12 mb-2 opacity-50" />

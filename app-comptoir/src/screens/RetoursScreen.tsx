@@ -127,6 +127,31 @@ function statusLabel(statut: string) {
   }
 }
 
+/**
+ * Depuis la facturation scindée, une commande validée génère jusqu'à deux
+ * factures : suffixe `-BAR` (boissons et autres) et `-CUI` (nourriture).
+ * Les factures globales héritées (sans suffixe) couvrent tous les articles.
+ */
+function departementFromNumeroFacture(numero: string | undefined | null): 'bar' | 'cuisine' | null {
+  if (!numero) return null;
+  if (numero.includes('-CUI')) return 'cuisine';
+  if (numero.includes('-BAR')) return 'bar';
+  return null;
+}
+
+/** Libellé de localisation : une vente comptoir n'a pas de table. */
+function formatLocalisation(commande: {
+  tables?: { numero: number } | null;
+  canal?: string | null;
+  type_service?: string | null;
+} | null | undefined): string {
+  if (!commande) return '—';
+  if (commande.tables?.numero != null) return `Table ${commande.tables.numero}`;
+  if (commande.type_service === 'emporter') return 'À emporter';
+  if (commande.canal === 'comptoir') return 'Comptoir';
+  return 'Vente directe';
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -146,6 +171,7 @@ export function RetoursScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [enrichedItems, setEnrichedItems] = useState<CommandeItemWithRetour[]>([]);
+  const [isLoadingItems, setIsLoadingItems] = useState(false);
 
   // ---- Filters -------------------------------------------------------------
   const [searchTerm, setSearchTerm] = useState('');
@@ -246,6 +272,7 @@ export function RetoursScreen() {
       if (match) {
         setActiveTab('nouveau');
         setSelectedFacture(match);
+        void loadFactureItems(match);
       }
     }
   }, [location.state, factures]);
@@ -343,25 +370,73 @@ export function RetoursScreen() {
 
   const totalRetour = retourItems.reduce((sum, i) => sum + i.montant_ligne, 0);
 
-  const handleSelectFacture = async (facture: FactureWithDetails) => {
-    setSelectedFacture(facture);
+  /**
+   * Charge les articles retournables de la facture, filtrés sur son département.
+   * Une facture BAR ne doit pas permettre de retourner des plats (et inversement),
+   * sinon la régularisation serait imputée au mauvais département.
+   */
+  async function loadFactureItems(facture: FactureWithDetails) {
     setRetourItems([]);
-    setMotif('');
-    setShowSuccess(false);
+    setEnrichedItems([]);
 
     const cmdId = facture.commandes?.id;
     if (!cmdId) {
-      setEnrichedItems([]);
+      setIsLoadingItems(false);
       return;
     }
 
-    const { data } = await supabase
-      .from('commande_items_with_retours')
-      .select('*')
-      .eq('commande_id', cmdId)
-      .order('nom_produit', { ascending: true });
+    setIsLoadingItems(true);
+    try {
+      const { data, error } = await supabase
+        .from('commande_items_with_retours')
+        .select('*')
+        .eq('commande_id', cmdId)
+        .order('nom_produit', { ascending: true });
 
-    setEnrichedItems((data as unknown as CommandeItemWithRetour[]) || []);
+      if (error) throw error;
+
+      const items = (data as unknown as CommandeItemWithRetour[]) || [];
+      const departement = departementFromNumeroFacture(facture.numero_facture);
+
+      // Facture globale héritée (sans suffixe) : tous les articles sont éligibles.
+      if (!departement || items.length === 0) {
+        setEnrichedItems(items);
+        return;
+      }
+
+      const produitIds = [...new Set(items.map((item) => item.produit_id))];
+      const { data: produits, error: produitsError } = await supabase
+        .from('produits')
+        .select('id, categorie')
+        .in('id', produitIds);
+
+      if (produitsError) throw produitsError;
+
+      const categorieParProduit = new Map<string, string>(
+        (produits || []).map((p: { id: string; categorie: string }) => [p.id, p.categorie]),
+      );
+
+      setEnrichedItems(
+        items.filter((item) => {
+          const categorie = categorieParProduit.get(item.produit_id);
+          return departement === 'cuisine'
+            ? categorie === 'nourriture'
+            : categorie !== 'nourriture';
+        }),
+      );
+    } catch (err) {
+      console.error('Erreur lors du chargement des articles retournables:', err);
+      setEnrichedItems([]);
+    } finally {
+      setIsLoadingItems(false);
+    }
+  }
+
+  const handleSelectFacture = async (facture: FactureWithDetails) => {
+    setSelectedFacture(facture);
+    setMotif('');
+    setShowSuccess(false);
+    await loadFactureItems(facture);
   };
 
   const handleToggleItem = (item: CommandeItemWithRetour) => {
@@ -423,6 +498,7 @@ export function RetoursScreen() {
         setSelectedFacture(null);
         setRetourItems([]);
         setMotif('');
+        setEnrichedItems([]);
         refetchFactures();
         refetchPending();
         refetchHistorique();
@@ -529,15 +605,30 @@ export function RetoursScreen() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-sm text-neutral-900 dark:text-white truncate">
-                      {facture.commandes?.numero_commande ?? '—'}
+                      {facture.numero_facture}
                     </h3>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Table {facture.commandes?.tables?.numero ?? '?'} •{' '}
+                      {formatLocalisation(facture.commandes)} •{' '}
                       {facture.commandes?.profiles?.prenom ?? ''}{' '}
                       {facture.commandes?.profiles?.nom ?? ''}
                     </p>
                   </div>
                 </div>
+                <span
+                  className={`inline-block px-2 py-0.5 mb-2 rounded text-[10px] font-bold uppercase tracking-wider ${
+                    facture.numero_facture.includes('-CUI')
+                      ? 'bg-orange-500/10 text-orange-500'
+                      : facture.numero_facture.includes('-BAR')
+                        ? 'bg-blue-500/10 text-blue-500'
+                        : 'bg-neutral-500/10 text-neutral-500'
+                  }`}
+                >
+                  {facture.numero_facture.includes('-CUI')
+                    ? '🍲 Cuisine'
+                    : facture.numero_facture.includes('-BAR')
+                      ? '🍷 Bar'
+                      : 'Global'}
+                </span>
                 <div className="flex items-center justify-between text-sm mb-2">
                   <span className="text-neutral-500 dark:text-neutral-400">
                     {format(new Date(facture.date_generation), 'dd MMM yyyy', { locale: fr })}
@@ -775,10 +866,8 @@ export function RetoursScreen() {
 
   const renderReturnForm = () => {
     if (!selectedFacture) return null;
-    const itemsToShow =
-      enrichedItems.length > 0
-        ? enrichedItems
-        : ((selectedFacture.commandes?.commande_items || []) as unknown as CommandeItemWithRetour[]);
+    const itemsToShow = enrichedItems;
+    const departement = departementFromNumeroFacture(selectedFacture.numero_facture);
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
@@ -800,10 +889,17 @@ export function RetoursScreen() {
                 Commande {selectedFacture.commandes?.numero_commande}
               </h2>
               <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                Table {selectedFacture.commandes?.tables?.numero} •{' '}
+                {formatLocalisation(selectedFacture.commandes)} •{' '}
                 {selectedFacture.commandes?.profiles?.prenom}{' '}
                 {selectedFacture.commandes?.profiles?.nom}
               </p>
+              <span className="inline-block mt-2 px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded text-[10px] font-bold uppercase tracking-wider">
+                {departement === 'cuisine'
+                  ? '🍲 Département Cuisine'
+                  : departement === 'bar'
+                    ? '🍷 Département Bar'
+                    : 'Tous départements'}
+              </span>
             </div>
             <button
               onClick={handleBackFromForm}
@@ -839,8 +935,24 @@ export function RetoursScreen() {
           <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-4">
             Articles à retourner
           </h3>
+          {departement && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+              Seuls les articles {departement === 'cuisine' ? 'de cuisine' : 'du bar'} rattachés à cette facture sont proposés.
+            </p>
+          )}
           <div className="space-y-3">
-            {itemsToShow.map((item) => {
+            {isLoadingItems ? (
+              <div className="flex justify-center py-10">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary dark:border-white" />
+              </div>
+            ) : itemsToShow.length === 0 ? (
+              <div className="text-center py-10 text-neutral-400 dark:text-neutral-500">
+                <Package className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">
+                  Aucun article retournable pour cette facture.
+                </p>
+              </div>
+            ) : itemsToShow.map((item) => {
               const isSelected = retourItems.some((i) => i.commande_item_id === item.id);
               const selectedItem = retourItems.find((i) => i.commande_item_id === item.id);
               const restante = Math.max(0, item.quantite - (item.quantite_totale_retournee ?? 0));

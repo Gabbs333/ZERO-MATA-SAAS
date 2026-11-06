@@ -14,9 +14,25 @@ interface UnpaidFacture {
   statut: 'en_attente_paiement' | 'partiellement_payee';
   date_generation: string;
   commandes: {
-    tables: { numero: number };
-    profiles: { nom: string; prenom: string };
-  };
+    numero_commande?: string;
+    tables: { numero: number } | null;
+    canal?: string | null;
+    type_service?: string | null;
+    profiles: { nom: string; prenom: string } | null;
+  } | null;
+}
+
+/**
+ * Localisation d'une facture : les ventes au comptoir n'ont pas de table
+ * (commandes.table_id nullable), donc `tables` peut être null.
+ */
+function formatLocalisation(facture: UnpaidFacture): string {
+  const commande = facture.commandes;
+  if (!commande) return '—';
+  if (commande.tables?.numero != null) return `Table ${commande.tables.numero}`;
+  if (commande.type_service === 'emporter') return 'À emporter';
+  if (commande.canal === 'comptoir') return 'Comptoir';
+  return 'Vente directe';
 }
 
 export function CreancesScreen() {
@@ -36,6 +52,9 @@ export function CreancesScreen() {
         .select(`
           *,
           commandes (
+            numero_commande,
+            canal,
+            type_service,
             tables (numero),
             profiles!serveuse_id (nom, prenom)
           )
@@ -152,9 +171,11 @@ export function CreancesScreen() {
                           </div>
                           <div>
                              <h3 className="font-bold text-primary dark:text-white text-sm">
-                                {facture.commandes.profiles.prenom} {facture.commandes.profiles.nom}
+                                {facture.commandes?.profiles
+                                  ? `${facture.commandes.profiles.prenom} ${facture.commandes.profiles.nom}`
+                                  : 'Client comptoir'}
                              </h3>
-                             <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">Table {facture.commandes.tables.numero} • {format(new Date(facture.date_generation), 'dd MMM HH:mm')}</p>
+                             <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">{formatLocalisation(facture)} • {format(new Date(facture.date_generation), 'dd MMM HH:mm')}</p>
                           </div>
                        </div>
                        <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-white/10">

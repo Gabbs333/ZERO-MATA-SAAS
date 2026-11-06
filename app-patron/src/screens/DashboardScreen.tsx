@@ -478,8 +478,13 @@ export function DashboardScreen() {
   );
 
   // Mutations for returns validation
-  const validateRetour = useValidateRetour();
-  const rejectRetour = useRejectRetour();
+  const validateRetour = useValidateRetour({
+    onError: (err) =>
+      alert(err.message || 'Erreur lors de la validation du retour'),
+  });
+  const rejectRetour = useRejectRetour({
+    onError: (err) => alert(err.message || 'Erreur lors du refus du retour'),
+  });
 
 
   return (
@@ -1210,8 +1215,7 @@ export function DashboardScreen() {
                       </button>
                       <button
                         onClick={() => {
-                          const motif = prompt('Motif du refus:');
-                          if (motif) {
+                          if (confirm('Refuser ce retour ?')) {
                             rejectRetour.mutate(retour.facture_id);
                           }
                         }}
