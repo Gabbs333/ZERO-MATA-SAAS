@@ -65,9 +65,26 @@ const MOIS = [
   'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
 ];
 
+/**
+ * Les polices standard de jsPDF (Helvetica/WinAnsi) ne contiennent pas certains
+ * caractères typographiques : l'espace fine insécable utilisée par
+ * `toLocaleString('fr-FR')` s'affiche comme un « / ». On normalise les textes
+ * avant de les envoyer au PDF.
+ */
+function pdfText(value: unknown): string {
+  return String(value ?? '')
+    .replace(/[\u202F\u00A0\u2009\u2007\u200A]/g, ' ')
+    .replace(/[\u2018\u2019\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201F]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/\u2192/g, '->')
+    .replace(/\u00B7/g, '-');
+}
+
 function formatDateFr(value: string): string {
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
+  if (Number.isNaN(d.getTime())) return pdfText(value);
   return `${String(d.getDate()).padStart(2, '0')} ${MOIS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
@@ -95,7 +112,9 @@ export async function buildSynthesePdf(s: SynthesePeriode): Promise<ArrayBuffer>
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 40;
 
-  const montant = (v: number) => formatMontant(v);
+  const montant = (v: number) => pdfText(formatMontant(v));
+  const etablissement = pdfText(s.meta.etablissement_nom);
+  const redacteur = pdfText(s.meta.genere_par);
 
   // --- En-tête -------------------------------------------------------------
   doc.setFont('helvetica', 'bold');
@@ -105,14 +124,14 @@ export async function buildSynthesePdf(s: SynthesePeriode): Promise<ArrayBuffer>
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(110);
-  doc.text(s.meta.etablissement_nom, margin, 68);
+  doc.text(etablissement, margin, 68);
   doc.text(
-    `Période : ${formatDateFr(s.meta.date_debut)} → ${formatDateFr(s.meta.date_fin)}`,
+    `Période du ${formatDateFr(s.meta.date_debut)} au ${formatDateFr(s.meta.date_fin)}`,
     margin,
     82,
   );
   doc.text(
-    `Édité le ${formatDateFr(s.meta.genere_le)} par ${s.meta.genere_par}`,
+    `Édité le ${formatDateFr(s.meta.genere_le)} par ${redacteur}`,
     margin,
     96,
   );
@@ -185,14 +204,14 @@ export async function buildSynthesePdf(s: SynthesePeriode): Promise<ArrayBuffer>
     headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
     head: [['Mouvement', 'Montant', 'Nombre']],
     body: [
-      ['Entrées de caisse hors ventes', montant(s.caisse.entrees_hors_ventes), '—'],
-      ['Sorties de caisse', montant(s.caisse.sorties), '—'],
-      ['Solde théorique de caisse', montant(s.caisse.solde_theorique), '—'],
+      ['Entrées de caisse hors ventes', montant(s.caisse.entrees_hors_ventes), '-'],
+      ['Sorties de caisse', montant(s.caisse.sorties), '-'],
+      ['Solde théorique de caisse', montant(s.caisse.solde_theorique), '-'],
       ['Clôtures de caisse', montant(s.caisse.ecart_total), String(s.caisse.clotures)],
       ['Retours', montant(s.retours.montant), String(s.retours.nb)],
-      ['Échanges — montant retourné', montant(s.echanges.montant_retourne), String(s.echanges.nb)],
-      ['Échanges — montant ajouté', montant(s.echanges.montant_ajoute), '—'],
-      ['Échanges — différence', montant(s.echanges.difference), '—'],
+      ['Échanges - montant retourné', montant(s.echanges.montant_retourne), String(s.echanges.nb)],
+      ['Échanges - montant ajouté', montant(s.echanges.montant_ajoute), '-'],
+      ['Échanges - différence', montant(s.echanges.difference), '-'],
     ],
   });
 
@@ -203,12 +222,12 @@ export async function buildSynthesePdf(s: SynthesePeriode): Promise<ArrayBuffer>
     doc.setFontSize(8);
     doc.setTextColor(140);
     doc.text(
-      `ZERO-MATA · ${s.meta.etablissement_nom} · ${s.meta.devise} · Page ${i}/${pageCount}`,
+      pdfText(`ZERO-MATA - ${s.meta.etablissement_nom} - ${s.meta.devise} - Page ${i}/${pageCount}`),
       margin,
       doc.internal.pageSize.getHeight() - 24,
     );
     doc.text(
-      'Document de synthèse — ne se substitue pas aux journaux détaillés.',
+      'Document de synthèse - ne se substitue pas aux journaux détaillés.',
       pageWidth - margin,
       doc.internal.pageSize.getHeight() - 24,
       { align: 'right' },

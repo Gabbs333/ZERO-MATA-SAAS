@@ -11,6 +11,7 @@ export type ExportType =
   | 'journal_echanges'
   | 'rapport_caisse_journalier'
   | 'rapport_stock_journalier'
+  | 'rapport_stock_synthese'
   | 'journal_mouvements_stock';
 
 export interface ExportColumn {
@@ -206,7 +207,35 @@ export const EXPORT_DEFINITIONS: ExportDefinition[] = [
   },
   {
     type: 'rapport_stock_journalier',
-    label: 'Rapprochement de stock',
+    label: 'Rapprochement de stock (par produit)',
+    description: 'Une ligne par désignation : ouverture, entrées, sorties, théorique, réel et écarts.',
+    category: 'Stock',
+    columns: [
+      { key: 'produit', label: 'Produit' },
+      { key: 'categorie', label: 'Catégorie' },
+      { key: 'departement', label: 'Département' },
+      { key: 'cout_unitaire', label: 'Coût unitaire', numeric: true },
+      { key: 'qte_ouverture', label: 'Qté ouverture', numeric: true },
+      { key: 'qte_entrees', label: 'Qté entrées', numeric: true },
+      { key: 'qte_sorties_ventes', label: 'Qté vendues', numeric: true },
+      { key: 'qte_sorties_autres', label: 'Qté sorties autres', numeric: true },
+      { key: 'qte_theorique', label: 'Qté théorique', numeric: true },
+      { key: 'qte_reelle', label: 'Qté comptée', numeric: true },
+      { key: 'ecart_qte', label: 'Écart qté', numeric: true },
+      { key: 'valeur_ouverture', label: 'Valeur ouverture', numeric: true },
+      { key: 'valeur_entrees', label: 'Valeur entrées', numeric: true },
+      { key: 'valeur_sorties_ventes', label: 'Valeur vendue', numeric: true },
+      { key: 'valeur_sorties_autres', label: 'Valeur sorties autres', numeric: true },
+      { key: 'valeur_theorique', label: 'Valeur théorique', numeric: true },
+      { key: 'valeur_reelle', label: 'Valeur comptée', numeric: true },
+      { key: 'ecart_valeur', label: 'Écart valeur', numeric: true },
+      { key: 'jours_comptes', label: 'Jours comptés', numeric: true },
+      { key: 'statut', label: 'Statut' },
+    ],
+  },
+  {
+    type: 'rapport_stock_synthese',
+    label: 'Rapprochement de stock (synthèse journalière)',
     description: 'Par jour : valeur du stock vendu, entrées valorisées et écarts de comptage.',
     category: 'Stock',
     columns: [
