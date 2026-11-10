@@ -1,14 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import { formatMontant } from '../utils/format';
-import { format } from 'date-fns';
+import { EXPORT_DEFINITIONS, downloadCsv } from '../lib/exporters';
+import type { ExportDataset } from '../lib/exporters';
+import { format, startOfDay, endOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
   Wallet, Calendar, ArrowUpCircle, ArrowDownCircle,
   TrendingUp, TrendingDown, Banknote, Smartphone,
-  CreditCard, Receipt, Clock, DollarSign
+  CreditCard, Receipt, Clock, DollarSign, Download, Save, Loader2
 } from 'lucide-react';
 
 interface MouvementCaisse {
@@ -31,9 +33,26 @@ interface SoldeCaisse {
   solde_theorique: number;
 }
 
+interface ClotureCaisse {
+  id: string;
+  date_cloture: string;
+  montant_theorique: number;
+  montant_compte: number;
+  ecart: number;
+  commentaire: string | null;
+  date_creation: string;
+}
+
 export function CaisseScreen() {
   const profile = useAuthStore((state) => state.profile);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [montantCompte, setMontantCompte] = useState('');
+  const [commentaireCloture, setCommentaireCloture] = useState('');
+  const [savingCloture, setSavingCloture] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [clotureFeedback, setClotureFeedback] = useState<
+    { type: 'ok' | 'error'; message: string } | null
+  >(null);
 
   // Fetch solde
   const { data: solde } = useSupabaseQuery<SoldeCaisse>(
@@ -123,6 +142,83 @@ export function CaisseScreen() {
   const creditJourTotal = (creditJour || []).reduce((sum, f) => sum + (f.montant_total || 0), 0);
   const creditJourRestant = (creditJour || []).reduce((sum, f) => sum + (f.montant_restant || 0), 0);
 
+  // Clôture de caisse déjà enregistrée pour la journée sélectionnée
+  const { data: cloture, refetch: refetchCloture } = useSupabaseQuery<ClotureCaisse | null>(
+    ['cloture_caisse', selectedDate, profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: null, error: null };
+      const { data, error } = await supabase
+        .from('clotures_caisse')
+        .select('*')
+        .eq('etablissement_id', profile.etablissement_id)
+        .eq('date_cloture', selectedDate)
+        .maybeSingle();
+      return { data: (data as unknown as ClotureCaisse) || null, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  useEffect(() => {
+    setMontantCompte(cloture ? String(cloture.montant_compte) : '');
+    setCommentaireCloture(cloture?.commentaire || '');
+  }, [cloture]);
+
+  const montantTheorique = solde?.solde_theorique || 0;
+  const montantCompteSaisi = montantCompte.trim() === '' ? null : Number(montantCompte);
+  const ecartCloture =
+    montantCompteSaisi !== null && Number.isFinite(montantCompteSaisi)
+      ? montantCompteSaisi - montantTheorique
+      : null;
+
+  const handleSaveCloture = async () => {
+    if (montantCompteSaisi === null || !Number.isFinite(montantCompteSaisi) || montantCompteSaisi < 0) {
+      setClotureFeedback({ type: 'error', message: 'Saisissez un montant compté valide.' });
+      return;
+    }
+    setSavingCloture(true);
+    setClotureFeedback(null);
+    try {
+      const { error } = await supabase.rpc('enregistrer_cloture_caisse', {
+        p_date: selectedDate,
+        p_montant_compte: Math.round(montantCompteSaisi),
+        p_commentaire: commentaireCloture.trim() || null,
+      });
+      if (error) throw error;
+      await refetchCloture();
+      setClotureFeedback({ type: 'ok', message: 'Clôture enregistrée.' });
+    } catch (err: any) {
+      console.error('Cloture error:', err);
+      setClotureFeedback({
+        type: 'error',
+        message: err?.message || "Impossible d'enregistrer la clôture.",
+      });
+    } finally {
+      setSavingCloture(false);
+    }
+  };
+
+  const handleExportCaisse = async () => {
+    const definition = EXPORT_DEFINITIONS.find((d) => d.type === 'rapport_caisse_journalier');
+    if (!definition) return;
+    setExporting(true);
+    try {
+      const day = new Date(`${selectedDate}T12:00:00`);
+      const { data, error } = await supabase.rpc('get_export_dataset', {
+        p_type: 'rapport_caisse_journalier',
+        p_date_debut: startOfDay(day).toISOString(),
+        p_date_fin: endOfDay(day).toISOString(),
+        p_filtres: {},
+      });
+      if (error) throw error;
+      const dataset = data as ExportDataset;
+      if (dataset?.rows) downloadCsv(dataset, definition);
+    } catch (err) {
+      console.error('Export caisse error:', err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const getModeIcon = (mode: string) => {
     switch (mode) {
       case 'especes': return <Banknote className="w-3.5 h-3.5" />;
@@ -145,7 +241,7 @@ export function CaisseScreen() {
             </p>
           </div>
 
-          {/* Sélecteur de date */}
+          {/* Sélecteur de date + export */}
           <div className="flex items-center gap-3">
             <Calendar className="w-5 h-5 text-neutral-400" />
             <input
@@ -154,6 +250,18 @@ export function CaisseScreen() {
               onChange={(e) => setSelectedDate(e.target.value)}
               className="px-3 py-2 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary rounded-xl text-neutral-900 dark:text-white outline-none"
             />
+            <button
+              onClick={handleExportCaisse}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {exporting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              Exporter
+            </button>
           </div>
         </div>
       </div>
@@ -222,6 +330,103 @@ export function CaisseScreen() {
             </div>
           </div>
         )}
+
+        {/* Clôture de caisse */}
+        <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-5 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-bold text-neutral-900 dark:text-white">Clôture de caisse</h3>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                Rapprochement du {format(new Date(selectedDate + 'T12:00:00'), 'dd MMMM yyyy', { locale: fr })}
+                {cloture && ' • clôturée'}
+              </p>
+            </div>
+            {cloture && (
+              <span className="text-xs font-medium px-2 py-1 rounded-lg bg-neutral-100 dark:bg-white/10 text-neutral-600 dark:text-neutral-300">
+                Dernière saisie : {format(new Date(cloture.date_creation), 'dd/MM/yyyy HH:mm', { locale: fr })}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-neutral-500 uppercase mb-1">
+                Montant compté en fin de journée
+              </label>
+              <input
+                type="number"
+                min="0"
+                inputMode="numeric"
+                value={montantCompte}
+                onChange={(e) => setMontantCompte(e.target.value)}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary rounded-xl text-neutral-900 dark:text-white outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-neutral-500 uppercase mb-1">
+                Solde théorique
+              </label>
+              <p className="px-3 py-2 text-lg font-bold text-neutral-900 dark:text-white">
+                {formatMontant(montantTheorique)}
+              </p>
+              <p className="text-[10px] text-neutral-400 px-3">
+                {ecartCloture === null
+                  ? 'Saisissez le montant compté pour calculer l’écart'
+                  : `Écart : ${ecartCloture > 0 ? '+' : ''}${formatMontant(ecartCloture)}`}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-neutral-500 uppercase mb-1">
+                Commentaire (optionnel)
+              </label>
+              <input
+                type="text"
+                value={commentaireCloture}
+                onChange={(e) => setCommentaireCloture(e.target.value)}
+                placeholder="Observation de caisse…"
+                className="w-full px-3 py-2 bg-neutral-100 dark:bg-white/5 border border-transparent focus:border-primary rounded-xl text-neutral-900 dark:text-white outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
+            <div>
+              {ecartCloture !== null && (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold ${
+                    ecartCloture === 0
+                      ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-400'
+                      : 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400'
+                  }`}
+                >
+                  {ecartCloture === 0 ? 'Caisse juste' : 'Écart de caisse'} :{' '}
+                  {formatMontant(ecartCloture)}
+                </span>
+              )}
+              {clotureFeedback && (
+                <p
+                  className={`mt-2 text-sm ${
+                    clotureFeedback.type === 'ok' ? 'text-green-600' : 'text-semantic-red'
+                  }`}
+                >
+                  {clotureFeedback.message}
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={handleSaveCloture}
+              disabled={savingCloture || montantCompteSaisi === null}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {savingCloture ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {cloture ? 'Mettre à jour la clôture' : 'Enregistrer la clôture'}
+            </button>
+          </div>
+        </div>
 
         {/* Encaissements par mode de paiement */}
         <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-5 mb-6">

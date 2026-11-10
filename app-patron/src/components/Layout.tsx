@@ -17,7 +17,8 @@ import {
   Menu,
   X,
   ArrowLeftCircle,
-  Wallet
+  Wallet,
+  Download
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationsPopover } from './NotificationsPopover';
@@ -107,6 +108,7 @@ export function Layout({ children }: LayoutProps) {
       { text: 'Tables', icon: LayoutDashboard, path: '/tables', roles: ['gerant', 'patron'] },
       { text: 'Retours', icon: ArrowLeftCircle, path: '/retours', roles: ['gerant', 'patron'] },
       { text: 'Caisse', icon: Wallet, path: '/caisse', roles: ['gerant', 'patron'] },
+      { text: 'Exports', icon: Download, path: '/exports', roles: ['gerant', 'patron'] },
       { text: 'Clients', icon: Users, path: '/clients', roles: ['patron', 'gerant', 'comptoir'] },
       { text: 'Performance', icon: Banknote, path: '/profits', roles: ['patron'] },
   ];

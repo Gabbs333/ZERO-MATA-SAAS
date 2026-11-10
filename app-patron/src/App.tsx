@@ -21,6 +21,7 @@ import { TransactionsScreen } from './screens/TransactionsScreen';
 import { ClientsScreen } from './screens/ClientsScreen';
 import { AuditLogScreen } from './screens/AuditLogScreen';
 import { CaisseScreen } from './screens/CaisseScreen';
+import { ExportsScreen } from './screens/ExportsScreen';
 import { UserProfileScreen } from './screens/UserProfileScreen';
 import { SystemActivityScreen } from './screens/SystemActivityScreen';
 
@@ -217,6 +218,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <CaisseScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/exports"
+            element={
+              <ProtectedRoute>
+                <ExportsScreen />
               </ProtectedRoute>
             }
           />
