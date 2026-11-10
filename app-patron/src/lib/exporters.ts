@@ -4,6 +4,7 @@
 
 export type ExportType =
   | 'journal_ventes'
+  | 'journal_factures'
   | 'journal_encaissements'
   | 'journal_caisse'
   | 'journal_ventes_credit'
@@ -86,6 +87,28 @@ export const EXPORT_DEFINITIONS: ExportDefinition[] = [
       { key: 'montant_ttc', label: 'Montant TTC', numeric: true },
       { key: 'base_ht', label: 'Base HT', numeric: true },
       { key: 'tva', label: 'TVA', numeric: true },
+    ],
+  },
+  {
+    type: 'journal_factures',
+    label: 'Journal des factures',
+    description: 'Une ligne par facture : montant initial, net, payé, restant, statut et crédit.',
+    category: 'Comptabilité',
+    columns: [
+      { key: 'date', label: 'Date' },
+      { key: 'numero_facture', label: 'N° facture' },
+      { key: 'numero_commande', label: 'N° commande' },
+      { key: 'departement', label: 'Département' },
+      { key: 'client', label: 'Client' },
+      { key: 'telephone', label: 'Téléphone' },
+      { key: 'agent', label: 'Serveuse' },
+      { key: 'montant_initial', label: 'Montant initial', numeric: true },
+      { key: 'montant_total', label: 'Montant net', numeric: true },
+      { key: 'montant_paye', label: 'Payé', numeric: true },
+      { key: 'montant_restant', label: 'Restant dû', numeric: true },
+      { key: 'statut', label: 'Statut' },
+      { key: 'vente_a_credit', label: 'À crédit' },
+      { key: 'date_paiement_complet', label: 'Soldée le' },
     ],
   },
   {

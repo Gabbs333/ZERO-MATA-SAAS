@@ -18,6 +18,7 @@ import {
   FileSpreadsheet,
   FileText,
   Loader2,
+  MessageCircle,
   ShieldCheck,
 } from 'lucide-react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
@@ -228,6 +229,48 @@ export function ExportsScreen() {
     }
   };
 
+  const genererSynthese = async () => {
+    const { data, error } = await supabase.rpc('get_synthese_periode', {
+      p_date_debut: range.start.toISOString(),
+      p_date_fin: range.end.toISOString(),
+    });
+    if (error) throw error;
+
+    const synthese = data as SynthesePeriode;
+    if (!synthese?.meta) throw new Error('Synthèse indisponible.');
+
+    const { buildSynthesePdf, buildSyntheseFilename } = await import('../lib/pdfExport');
+    const bytes = await buildSynthesePdf(synthese);
+
+    const archive = profile?.etablissement_id
+      ? await archiverExport({
+          etablissementId: profile.etablissement_id,
+          typeExport: 'synthese_cloture',
+          filename: buildSyntheseFilename(synthese.meta, 'pdf'),
+          contenu: bytes,
+          contentType: 'application/pdf',
+        })
+      : null;
+
+    await journaliser({
+      etablissement_id: profile?.etablissement_id,
+      type_export: 'synthese_cloture',
+      periode_debut: range.start.toISOString(),
+      periode_fin: range.end.toISOString(),
+      filtres: {},
+      format: 'pdf',
+      storage_path: archive?.path ?? null,
+      sha256: archive?.sha256 ?? null,
+      taille_octets: archive?.taille ?? bytes.byteLength,
+      nb_lignes: 1,
+      statut: 'genere',
+      utilisateur_id: profile?.id,
+    });
+
+    refetchExports();
+    return { synthese, bytes, archivePath: archive?.path ?? null };
+  };
+
   const runSynthesePdf = async () => {
     if (periodInvalid) {
       setFeedback({ type: 'error', message: 'La date de début doit précéder la date de fin.' });
@@ -238,44 +281,20 @@ export function ExportsScreen() {
     setFeedback(null);
 
     try {
-      const { data, error } = await supabase.rpc('get_synthese_periode', {
-        p_date_debut: range.start.toISOString(),
-        p_date_fin: range.end.toISOString(),
-      });
-      if (error) throw error;
+      const { synthese, bytes } = await genererSynthese();
+      const { buildSyntheseFilename } = await import('../lib/pdfExport');
 
-      const synthese = data as SynthesePeriode;
-      if (!synthese?.meta) throw new Error('Synthèse indisponible.');
+      // Téléchargement local du PDF déjà généré
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = buildSyntheseFilename(synthese.meta, 'pdf');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
 
-      const { downloadSynthesePdf, buildSyntheseFilename } = await import('../lib/pdfExport');
-      const bytes = await downloadSynthesePdf(synthese);
-
-      const archive = profile?.etablissement_id
-        ? await archiverExport({
-            etablissementId: profile.etablissement_id,
-            typeExport: 'synthese_cloture',
-            filename: buildSyntheseFilename(synthese.meta, 'pdf'),
-            contenu: bytes,
-            contentType: 'application/pdf',
-          })
-        : null;
-
-      await journaliser({
-        etablissement_id: profile?.etablissement_id,
-        type_export: 'synthese_cloture',
-        periode_debut: range.start.toISOString(),
-        periode_fin: range.end.toISOString(),
-        filtres: {},
-        format: 'pdf',
-        storage_path: archive?.path ?? null,
-        sha256: archive?.sha256 ?? null,
-        taille_octets: archive?.taille ?? bytes.byteLength,
-        nb_lignes: 1,
-        statut: 'genere',
-        utilisateur_id: profile?.id,
-      });
-
-      refetchExports();
       setFeedback({ type: 'ok', message: 'Synthèse de clôture générée (PDF).' });
     } catch (err: any) {
       console.error('Synthèse PDF error:', err);
@@ -285,6 +304,64 @@ export function ExportsScreen() {
       });
     } finally {
       setBusyKey(null);
+    }
+  };
+
+  const runSyntheseWhatsApp = async () => {
+    if (periodInvalid) {
+      setFeedback({ type: 'error', message: 'La date de début doit précéder la date de fin.' });
+      return;
+    }
+
+    setBusyKey('synthese-whatsapp');
+    setFeedback(null);
+
+    try {
+      const { synthese, archivePath } = await genererSynthese();
+      const { construireMessageSynthese, ouvrirWhatsApp } = await import('../lib/whatsapp');
+
+      const lien = archivePath ? await getExportDownloadUrl(archivePath, 604800) : null;
+      ouvrirWhatsApp({ texte: construireMessageSynthese(synthese, lien) });
+
+      setFeedback({
+        type: 'ok',
+        message: lien
+          ? 'WhatsApp ouvert : la synthèse et son lien PDF sont prêts à partager.'
+          : 'WhatsApp ouvert : synthèse prête (lien PDF indisponible).',
+      });
+    } catch (err: any) {
+      console.error('Synthèse WhatsApp error:', err);
+      setFeedback({
+        type: 'error',
+        message: err?.message || 'Erreur lors du partage de la synthèse.',
+      });
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handlePartagerArchive = async (log: ExportLog) => {
+    if (!log.storage_path) return;
+    setDownloadingPath(log.storage_path);
+    try {
+      const lien = await getExportDownloadUrl(log.storage_path, 604800);
+      if (!lien) {
+        setFeedback({ type: 'error', message: 'Archive introuvable ou expirée.' });
+        return;
+      }
+      const texte = [
+        `*Synthèse de clôture — ZERO-MATA*`,
+        `Période : ${format(parseISO(log.periode_debut), 'dd/MM/yyyy')} → ${format(
+          parseISO(log.periode_fin),
+          'dd/MM/yyyy',
+        )}`,
+        '',
+        `PDF (lien valable 7 jours) : ${lien}`,
+      ].join('\n');
+      const { ouvrirWhatsApp } = await import('../lib/whatsapp');
+      ouvrirWhatsApp({ texte });
+    } finally {
+      setDownloadingPath(null);
     }
   };
 
@@ -414,6 +491,20 @@ export function ExportsScreen() {
                 <FileText className="w-3.5 h-3.5" />
               )}
               Synthèse de clôture (PDF)
+            </button>
+            <button
+              type="button"
+              onClick={runSyntheseWhatsApp}
+              disabled={busyKey === 'synthese-whatsapp' || periodInvalid}
+              className="inline-flex items-center justify-center gap-2 px-4 h-9 rounded-lg bg-emerald-600 text-white text-xs font-bold disabled:opacity-50 transition-opacity hover:opacity-90 whitespace-nowrap"
+              title="Générer la synthèse, l'archiver et ouvrir WhatsApp avec le lien du PDF"
+            >
+              {busyKey === 'synthese-whatsapp' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <MessageCircle className="w-3.5 h-3.5" />
+              )}
+              WhatsApp
             </button>
           </div>
 
@@ -579,6 +670,18 @@ export function ExportsScreen() {
                             <Archive className="w-3 h-3" />
                           )}
                           Archive
+                        </button>
+                      )}
+                      {log.storage_path && log.type_export === 'synthese_cloture' && (
+                        <button
+                          type="button"
+                          onClick={() => handlePartagerArchive(log)}
+                          disabled={downloadingPath === log.storage_path}
+                          title="Partager le PDF sur WhatsApp"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          WhatsApp
                         </button>
                       )}
                       <span className="text-semantic-green flex items-center gap-1">

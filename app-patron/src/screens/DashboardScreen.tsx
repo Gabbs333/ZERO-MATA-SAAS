@@ -22,6 +22,8 @@ import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import { formatMontant, formatModePaiement } from '../utils/format';
 import { useValidateRetour, useRejectRetour } from '../hooks/useSupabaseMutation';
+import { EXPORT_DEFINITIONS } from '../lib/exporters';
+import { ExporterButton } from '../components/ExporterButton';
 import {
   Package,
   CreditCard,
@@ -602,11 +604,22 @@ export function DashboardScreen() {
             Personnalisé
           </button>
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-neutral-400 dark:text-neutral-500">
-          <Clock className="w-4 h-4" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">
-            {format(dateRange.start, 'dd MMM', { locale: fr })} - {format(dateRange.end, 'dd MMM', { locale: fr })}
-          </span>
+        <div className="flex items-center gap-3 text-neutral-400 dark:text-neutral-500">
+          <ExporterButton
+            definitions={EXPORT_DEFINITIONS.filter((d) =>
+              ['journal_ventes', 'journal_encaissements', 'rapport_caisse_journalier', 'journal_ventes_credit'].includes(
+                d.type,
+              ),
+            )}
+            start={dateRange.start}
+            end={dateRange.end}
+          />
+          <div className="hidden sm:flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">
+              {format(dateRange.start, 'dd MMM', { locale: fr })} - {format(dateRange.end, 'dd MMM', { locale: fr })}
+            </span>
+          </div>
         </div>
       </div>
 

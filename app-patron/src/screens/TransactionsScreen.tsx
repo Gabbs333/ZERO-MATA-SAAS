@@ -2,13 +2,18 @@ import { useState } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { useAuthStore } from '../store/authStore';
 import { formatMontant } from '../utils/format';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { Search, Banknote, Smartphone, CreditCard } from 'lucide-react';
+import { EXPORT_DEFINITIONS } from '../lib/exporters';
+import { ExporterButton } from '../components/ExporterButton';
 
 export function TransactionsScreen() {
   const profile = useAuthStore((state) => state.profile);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'especes' | 'carte' | 'mobile_money'>('all');
+
+  const maintenant = new Date();
+  const periodeExport = { start: startOfMonth(maintenant), end: endOfMonth(maintenant) };
 
   const { data: transactions, isLoading } = useSupabaseQuery(
     ['transactions', profile?.etablissement_id],
@@ -49,22 +54,31 @@ export function TransactionsScreen() {
             </p>
           </div>
           
-          <div className="flex p-1 bg-neutral-100 dark:bg-dark-card/60 rounded-xl overflow-x-auto self-start md:self-auto no-scrollbar">
-            {(['all', 'especes', 'carte', 'mobile_money'] as const).map((mode) => (
-              <button 
-                key={mode}
-                onClick={() => setFilterMode(mode)}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all whitespace-nowrap uppercase tracking-wider ${
-                  filterMode === mode
-                    ? 'bg-white dark:bg-dark-accent text-primary dark:text-white shadow-md' 
-                    : 'text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200'
-                }`}
-              >
-                {mode === 'all' ? 'Tous' : 
-                 mode === 'especes' ? 'Espèces' :
-                 mode === 'mobile_money' ? 'Mobile Money' : 'Carte'}
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            <ExporterButton
+              definitions={EXPORT_DEFINITIONS.filter((d) =>
+                ['journal_factures', 'journal_encaissements'].includes(d.type),
+              )}
+              start={periodeExport.start}
+              end={periodeExport.end}
+            />
+            <div className="flex p-1 bg-neutral-100 dark:bg-dark-card/60 rounded-xl overflow-x-auto self-start md:self-auto no-scrollbar">
+              {(['all', 'especes', 'carte', 'mobile_money'] as const).map((mode) => (
+                <button 
+                  key={mode}
+                  onClick={() => setFilterMode(mode)}
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all whitespace-nowrap uppercase tracking-wider ${
+                    filterMode === mode
+                      ? 'bg-white dark:bg-dark-accent text-primary dark:text-white shadow-md' 
+                      : 'text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
+                >
+                  {mode === 'all' ? 'Tous' : 
+                   mode === 'especes' ? 'Espèces' :
+                   mode === 'mobile_money' ? 'Mobile Money' : 'Carte'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
