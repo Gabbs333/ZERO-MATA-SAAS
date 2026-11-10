@@ -95,11 +95,11 @@ AS $$
            CASE WHEN m.type = 'sortie' AND m.type_reference = 'commande' THEN m.quantite ELSE 0 END AS q_vente,
            CASE WHEN m.type = 'sortie' AND m.type_reference <> 'commande' THEN m.quantite ELSE 0 END AS q_autre,
            CASE WHEN m.type = 'entree'
-                THEN m.quantite * COALESCE(m.cout_unitaire, p.prix_achat, 0) ELSE 0 END AS v_entree,
+                THEN m.quantite * COALESCE(m.cout_unitaire, p.cout, 0) ELSE 0 END AS v_entree,
            CASE WHEN m.type = 'sortie' AND m.type_reference = 'commande'
-                THEN m.quantite * COALESCE(m.cout_unitaire, p.prix_achat, 0) ELSE 0 END AS v_vente,
+                THEN m.quantite * COALESCE(m.cout_unitaire, p.cout, 0) ELSE 0 END AS v_vente,
            CASE WHEN m.type = 'sortie' AND m.type_reference <> 'commande'
-                THEN m.quantite * COALESCE(m.cout_unitaire, p.prix_achat, 0) ELSE 0 END AS v_autre
+                THEN m.quantite * COALESCE(m.cout_unitaire, p.cout, 0) ELSE 0 END AS v_autre
     FROM mouvements_stock m
     JOIN prod p ON p.id = m.produit_id
     WHERE m.etablissement_id = p_etablissement_id
