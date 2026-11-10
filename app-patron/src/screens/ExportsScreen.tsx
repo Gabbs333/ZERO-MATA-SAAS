@@ -160,7 +160,8 @@ export function ExportsScreen() {
       if (error) throw error;
       const dataset = data as ExportDataset;
       if (!dataset || !Array.isArray(dataset.rows)) {
-        throw new Error('Dataset vide ou invalide.');
+        console.error('Réponse RPC inattendue:', data);
+        throw new Error('Réponse inattendue du serveur (dataset invalide).');
       }
 
       const filename = buildFilename(definition.type, range.start, range.end, format);
@@ -215,10 +216,12 @@ export function ExportsScreen() {
         }.`,
       });
     } catch (err: any) {
-      console.error('Export error:', err);
+      console.error(`Export error [${definition.type}/${format}]:`, err);
+      const base = err?.message || "Erreur lors de la génération de l'export.";
+      const detailsParts = [err?.code, err?.details, err?.hint].filter(Boolean);
       setFeedback({
         type: 'error',
-        message: err?.message || "Erreur lors de la génération de l'export.",
+        message: detailsParts.length > 0 ? `${base} (${detailsParts.join(' | ')})` : base,
       });
     } finally {
       setBusyKey(null);
