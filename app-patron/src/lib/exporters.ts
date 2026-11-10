@@ -9,7 +9,9 @@ export type ExportType =
   | 'journal_ventes_credit'
   | 'journal_retours'
   | 'journal_echanges'
-  | 'rapport_caisse_journalier';
+  | 'rapport_caisse_journalier'
+  | 'rapport_stock_journalier'
+  | 'journal_mouvements_stock';
 
 export interface ExportColumn {
   key: string;
@@ -21,7 +23,7 @@ export interface ExportDefinition {
   type: ExportType;
   label: string;
   description: string;
-  category: 'Comptabilité' | 'Caisse';
+  category: 'Comptabilité' | 'Caisse' | 'Stock';
   columns: ExportColumn[];
 }
 
@@ -200,6 +202,48 @@ export const EXPORT_DEFINITIONS: ExportDefinition[] = [
       { key: 'montant_compte', label: 'Montant compté', numeric: true },
       { key: 'ecart', label: 'Écart', numeric: true },
       { key: 'commentaire', label: 'Commentaire' },
+    ],
+  },
+  {
+    type: 'rapport_stock_journalier',
+    label: 'Rapprochement de stock',
+    description: 'Par jour : valeur du stock vendu, entrées valorisées et écarts de comptage.',
+    category: 'Stock',
+    columns: [
+      { key: 'date', label: 'Date' },
+      { key: 'qte_entrees', label: 'Qté entrées', numeric: true },
+      { key: 'qte_sorties_ventes', label: 'Qté vendues', numeric: true },
+      { key: 'qte_sorties_autres', label: 'Qté sorties autres', numeric: true },
+      { key: 'valeur_ouverture', label: 'Valeur ouverture', numeric: true },
+      { key: 'valeur_entrees', label: 'Valeur entrées', numeric: true },
+      { key: 'valeur_sorties_ventes', label: 'Valeur vendue', numeric: true },
+      { key: 'valeur_sorties_autres', label: 'Valeur sorties autres', numeric: true },
+      { key: 'valeur_theorique', label: 'Valeur théorique', numeric: true },
+      { key: 'valeur_reelle', label: 'Valeur réelle', numeric: true },
+      { key: 'ecart_qte', label: 'Écart qté', numeric: true },
+      { key: 'ecart_valeur', label: 'Écart valeur', numeric: true },
+      { key: 'produits_suivis', label: 'Produits suivis', numeric: true },
+      { key: 'produits_comptes', label: 'Produits comptés', numeric: true },
+      { key: 'statut', label: 'Statut' },
+    ],
+  },
+  {
+    type: 'journal_mouvements_stock',
+    label: 'Journal des mouvements de stock',
+    description: 'Toutes les entrées et sorties valorisées, avec origine et agent.',
+    category: 'Stock',
+    columns: [
+      { key: 'date', label: 'Date' },
+      { key: 'produit', label: 'Produit' },
+      { key: 'categorie', label: 'Catégorie' },
+      { key: 'departement', label: 'Département' },
+      { key: 'sens', label: 'Sens' },
+      { key: 'origine', label: 'Origine' },
+      { key: 'quantite', label: 'Quantité', numeric: true },
+      { key: 'cout_unitaire', label: 'Coût unitaire', numeric: true },
+      { key: 'valeur', label: 'Valeur', numeric: true },
+      { key: 'reference', label: 'Référence' },
+      { key: 'agent', label: 'Agent' },
     ],
   },
 ];

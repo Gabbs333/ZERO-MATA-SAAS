@@ -3,18 +3,20 @@ import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import { formatMontant } from '../utils/format';
-import { 
-  Search, 
-  AlertTriangle, 
-  Plus, 
-  Package, 
-  Wine, 
-  Utensils
+import {
+  Search,
+  AlertTriangle,
+  Plus,
+  Package,
+  Wine,
+  Utensils,
+  ClipboardCheck
 } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
 import { StockAdjustmentModal } from '../components/stock/StockAdjustmentModal';
 import { StockThresholdModal } from '../components/stock/StockThresholdModal';
+import { ClotureStockModal } from '../components/stock/ClotureStockModal';
 import { Edit2 } from 'lucide-react';
 
 export function StockScreen() {
@@ -27,6 +29,7 @@ export function StockScreen() {
   // State pour le modal de seuil
   const [isThresholdModalOpen, setIsThresholdModalOpen] = useState(false);
   const [selectedStockForThreshold, setSelectedStockForThreshold] = useState<{id: string, seuil: number, nom: string} | null>(null);
+  const [isClotureModalOpen, setIsClotureModalOpen] = useState(false);
 
   const { data: stocks, isLoading, refetch } = useSupabaseQuery(
     ['stocks', profile?.etablissement_id],
@@ -98,6 +101,13 @@ export function StockScreen() {
                   <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">{lowStockCount} alertes</span>
                </div>
              )}
+             <button 
+                onClick={() => setIsClotureModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-white/5 border border-neutral-200 dark:border-white/10 text-primary dark:text-white rounded-lg font-bold text-sm hover:bg-neutral-50 dark:hover:bg-white/10 transition-all active:scale-95"
+             >
+                <ClipboardCheck className="w-4 h-4" />
+                <span>Clôture de stock</span>
+             </button>
              <button 
                 onClick={() => {
                   setSelectedProductForAdjustment(undefined);
@@ -368,6 +378,12 @@ export function StockScreen() {
           productName={selectedStockForThreshold.nom}
         />
       )}
+
+      <ClotureStockModal
+        isOpen={isClotureModalOpen}
+        onClose={() => setIsClotureModalOpen(false)}
+        onSuccess={() => refetch()}
+      />
     </div>
   );
 }

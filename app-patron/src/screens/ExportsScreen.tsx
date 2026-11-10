@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   endOfDay,
   endOfMonth,
@@ -11,6 +11,7 @@ import {
 import { fr } from 'date-fns/locale';
 import {
   AlertCircle,
+  Archive,
   Calendar,
   CheckCircle,
   Download,
@@ -24,17 +25,19 @@ import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import {
   EXPORT_DEFINITIONS,
+  buildFilename,
   downloadCsv,
-  sha256Hex,
 } from '../lib/exporters';
 import type { ExportDataset, ExportDefinition } from '../lib/exporters';
+import { archiverExport, getExportDownloadUrl, purgerExportsExpires, RETENTION_ARCHIVES } from '../lib/archive';
+import type { SynthesePeriode } from '../lib/pdfExport';
 
 // ---------------------------------------------------------------------------
 // Types locaux
 // ---------------------------------------------------------------------------
 
 type PeriodMode = 'today' | 'month' | 'prev_month' | 'custom';
-type Format = 'csv' | 'xlsx';
+type TabularFormat = 'csv' | 'xlsx';
 
 interface ExportLog {
   id: string;
@@ -44,6 +47,7 @@ interface ExportLog {
   format: string;
   nb_lignes: number | null;
   taille_octets: number | null;
+  storage_path: string | null;
   statut: string;
   date_creation: string;
   profiles?: { prenom: string; nom: string } | null;
@@ -72,6 +76,7 @@ export function ExportsScreen() {
   const [departement, setDepartement] = useState<'all' | 'bar' | 'cuisine'>('all');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'error'; message: string } | null>(null);
+  const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
 
   const {
     data: exportsLog,
@@ -116,7 +121,23 @@ export function ExportsScreen() {
 
   const periodInvalid = range.start > range.end;
 
-  const runExport = async (definition: ExportDefinition, format: Format) => {
+  // Purge opportuniste des archives arrivées à échéance (rétention 24 mois).
+  useEffect(() => {
+    if (!profile?.etablissement_id) return;
+    purgerExportsExpires(profile.etablissement_id).then((nb) => {
+      if (nb > 0) refetchExports();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.etablissement_id]);
+
+  const journaliser = async (payload: Record<string, unknown>) => {
+    const { error } = await supabase.from('exports_journalises').insert(payload);
+    if (error) {
+      console.warn('Export généré mais journalisation échouée:', error.message);
+    }
+  };
+
+  const runExport = async (definition: ExportDefinition, format: TabularFormat) => {
     if (periodInvalid) {
       setFeedback({ type: 'error', message: 'La date de début doit précéder la date de fin.' });
       return;
@@ -142,43 +163,56 @@ export function ExportsScreen() {
         throw new Error('Dataset vide ou invalide.');
       }
 
-      let hash: string;
-      let taille: number;
+      const filename = buildFilename(definition.type, range.start, range.end, format);
+      let contenu: Blob;
+      let contentType: string;
 
       if (format === 'csv') {
         const csv = downloadCsv(dataset, definition);
-        hash = await sha256Hex(csv);
-        taille = new Blob([csv]).size;
+        contenu = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        contentType = 'text/csv';
       } else {
         const { downloadXlsx } = await import('../lib/xlsxExport');
         const bytes = await downloadXlsx(dataset, definition);
-        hash = await sha256Hex(bytes);
-        taille = bytes.byteLength;
+        contenu = new Blob([bytes], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        contentType =
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       }
 
-      // Journalisation de l'export (traçabilité / audit)
-      const log = await supabase.from('exports_journalises').insert({
+      // Archivage Storage (le hash et la taille sont calculés à l'upload)
+      const archive = profile?.etablissement_id
+        ? await archiverExport({
+            etablissementId: profile.etablissement_id,
+            typeExport: definition.type,
+            filename,
+            contenu,
+            contentType,
+          })
+        : null;
+
+      await journaliser({
         etablissement_id: profile?.etablissement_id,
         type_export: definition.type,
         periode_debut: range.start.toISOString(),
         periode_fin: range.end.toISOString(),
         filtres,
         format,
-        sha256: hash,
-        taille_octets: taille,
+        storage_path: archive?.path ?? null,
+        sha256: archive?.sha256 ?? null,
+        taille_octets: archive?.taille ?? contenu.size,
         nb_lignes: dataset.rows.length,
         statut: 'genere',
         utilisateur_id: profile?.id,
       });
 
-      if (log.error) {
-        console.warn('Export généré mais journalisation échouée:', log.error.message);
-      }
-
       refetchExports();
       setFeedback({
         type: 'ok',
-        message: `${definition.label} exporté (${dataset.rows.length} ligne(s), ${format.toUpperCase()}).`,
+        message: `${definition.label} exporté (${dataset.rows.length} ligne(s), ${format.toUpperCase()})${
+          archive ? ' et archivé' : ''
+        }.`,
       });
     } catch (err: any) {
       console.error('Export error:', err);
@@ -191,7 +225,79 @@ export function ExportsScreen() {
     }
   };
 
-  const categories: Array<'Comptabilité' | 'Caisse'> = ['Comptabilité', 'Caisse'];
+  const runSynthesePdf = async () => {
+    if (periodInvalid) {
+      setFeedback({ type: 'error', message: 'La date de début doit précéder la date de fin.' });
+      return;
+    }
+
+    setBusyKey('synthese-pdf');
+    setFeedback(null);
+
+    try {
+      const { data, error } = await supabase.rpc('get_synthese_periode', {
+        p_date_debut: range.start.toISOString(),
+        p_date_fin: range.end.toISOString(),
+      });
+      if (error) throw error;
+
+      const synthese = data as SynthesePeriode;
+      if (!synthese?.meta) throw new Error('Synthèse indisponible.');
+
+      const { downloadSynthesePdf, buildSyntheseFilename } = await import('../lib/pdfExport');
+      const bytes = await downloadSynthesePdf(synthese);
+
+      const archive = profile?.etablissement_id
+        ? await archiverExport({
+            etablissementId: profile.etablissement_id,
+            typeExport: 'synthese_cloture',
+            filename: buildSyntheseFilename(synthese.meta, 'pdf'),
+            contenu: bytes,
+            contentType: 'application/pdf',
+          })
+        : null;
+
+      await journaliser({
+        etablissement_id: profile?.etablissement_id,
+        type_export: 'synthese_cloture',
+        periode_debut: range.start.toISOString(),
+        periode_fin: range.end.toISOString(),
+        filtres: {},
+        format: 'pdf',
+        storage_path: archive?.path ?? null,
+        sha256: archive?.sha256 ?? null,
+        taille_octets: archive?.taille ?? bytes.byteLength,
+        nb_lignes: 1,
+        statut: 'genere',
+        utilisateur_id: profile?.id,
+      });
+
+      refetchExports();
+      setFeedback({ type: 'ok', message: 'Synthèse de clôture générée (PDF).' });
+    } catch (err: any) {
+      console.error('Synthèse PDF error:', err);
+      setFeedback({
+        type: 'error',
+        message: err?.message || 'Erreur lors de la génération de la synthèse.',
+      });
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleOpenArchive = async (log: ExportLog) => {
+    if (!log.storage_path) return;
+    setDownloadingPath(log.storage_path);
+    try {
+      const url = await getExportDownloadUrl(log.storage_path);
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      else setFeedback({ type: 'error', message: 'Archive introuvable ou expirée.' });
+    } finally {
+      setDownloadingPath(null);
+    }
+  };
+
+  const categories: Array<'Comptabilité' | 'Caisse' | 'Stock'> = ['Comptabilité', 'Caisse', 'Stock'];
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-dark-bg pb-20 md:pb-6">
@@ -288,6 +394,25 @@ export function ExportsScreen() {
             <Calendar className="w-3.5 h-3.5" />
             {format(range.start, 'dd MMMM yyyy', { locale: fr })} → {format(range.end, 'dd MMMM yyyy', { locale: fr })}
           </p>
+
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-neutral-100 dark:border-white/5">
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+              Synthèse consolidée de la période : ventes, encaissements, crédits, caisse, stock vendu.
+            </p>
+            <button
+              type="button"
+              onClick={runSynthesePdf}
+              disabled={busyKey === 'synthese-pdf' || periodInvalid}
+              className="inline-flex items-center justify-center gap-2 px-4 h-9 rounded-lg bg-primary dark:bg-dark-accent text-white text-xs font-bold disabled:opacity-50 transition-opacity hover:opacity-90 whitespace-nowrap"
+            >
+              {busyKey === 'synthese-pdf' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileText className="w-3.5 h-3.5" />
+              )}
+              Synthèse de clôture (PDF)
+            </button>
+          </div>
 
           {feedback && (
             <div
@@ -386,8 +511,8 @@ export function ExportsScreen() {
               {' '}(métadonnées + totaux de contrôle).
             </p>
             <p>
-              Les montants sont exprimés en XAF, TTC, avec ventilation Base HT / TVA (19,25 %).
-              Chaque export est journalisé avec son empreinte SHA-256 pour l'archivage.
+              Chaque fichier est archivé dans le coffre privé de l'établissement
+              (rétention {RETENTION_ARCHIVES}) et journalisé avec son empreinte SHA-256.
             </p>
           </div>
         </div>
@@ -412,11 +537,14 @@ export function ExportsScreen() {
             <div className="divide-y divide-neutral-100 dark:divide-white/5 max-h-[50vh] overflow-y-auto">
               {exportsLog.map((log) => {
                 const definition = EXPORT_DEFINITIONS.find((d) => d.type === log.type_export);
+                const label =
+                  definition?.label ||
+                  (log.type_export === 'synthese_cloture' ? 'Synthèse de clôture' : log.type_export);
                 return (
                   <div key={log.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-primary dark:text-white truncate">
-                        {definition?.label || log.type_export}
+                        {label}
                       </p>
                       <p className="text-[10px] text-neutral-400 dark:text-neutral-500">
                         {format(parseISO(log.periode_debut), 'dd/MM/yyyy')} → {format(parseISO(log.periode_fin), 'dd/MM/yyyy')}
@@ -434,6 +562,22 @@ export function ExportsScreen() {
                       <span className="text-neutral-500 dark:text-neutral-400">
                         {formatOctets(log.taille_octets)}
                       </span>
+                      {log.storage_path && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenArchive(log)}
+                          disabled={downloadingPath === log.storage_path}
+                          title="Télécharger l'archive"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 dark:bg-dark-accent/20 text-primary dark:text-dark-accent hover:bg-primary/20 dark:hover:bg-dark-accent/30 disabled:opacity-50 transition-colors"
+                        >
+                          {downloadingPath === log.storage_path ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Archive className="w-3 h-3" />
+                          )}
+                          Archive
+                        </button>
+                      )}
                       <span className="text-semantic-green flex items-center gap-1">
                         <CheckCircle className="w-3 h-3" /> {log.statut}
                       </span>
