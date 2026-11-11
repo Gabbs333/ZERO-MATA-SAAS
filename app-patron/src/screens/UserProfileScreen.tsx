@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../config/supabase';
 import { User, Lock, Save } from 'lucide-react';
 
 export function UserProfileScreen() {
   const { profile, user, initialize } = useAuthStore();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
 
@@ -20,7 +22,16 @@ export function UserProfileScreen() {
       const { data, error } = await supabase.rpc('reset_comptabilite_financiere');
       if (error) throw error;
 
-      setMessage({ type: 'success', text: '✅ Réinitialisation financière effectuée avec succès.' });
+      // Toutes les vues (dashboard, caisse, exports, stock…) doivent se rafraîchir
+      await queryClient.invalidateQueries();
+
+      const supprimes = (data as any)?.supprimes;
+      setMessage({
+        type: 'success',
+        text: supprimes
+          ? `✅ Réinitialisation effectuée : ${supprimes.commandes} commande(s), ${supprimes.factures} facture(s), ${supprimes.retours} retour(s), ${supprimes.echanges} échange(s) supprimés.`
+          : '✅ Réinitialisation financière effectuée avec succès.',
+      });
     } catch (err: any) {
       console.error('Error resetting financial data:', err);
       setMessage({ type: 'error', text: '❌ Erreur lors de la réinitialisation : ' + (err.message || 'Erreur inconnue') });
