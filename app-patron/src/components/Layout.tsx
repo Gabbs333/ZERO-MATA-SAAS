@@ -18,6 +18,7 @@ import {
   X,
   ArrowLeftCircle,
   Wallet,
+  Tag,
   Download
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
@@ -99,6 +100,7 @@ export function Layout({ children }: LayoutProps) {
     { text: 'Stock', icon: Package, path: '/stock', roles: ['gerant', 'patron'] },
     { text: 'Staff', icon: Users, path: '/utilisateurs', roles: ['patron'] },
     { text: 'Settings', icon: Settings, path: '/profil', roles: ['gerant', 'patron'] },
+    { text: 'Tarifs', icon: Tag, path: '/tarifs', roles: ['patron'] },
   ];
 
   const secondaryItems = [

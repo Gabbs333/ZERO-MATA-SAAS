@@ -1,12 +1,14 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../config/supabase';
-import { User, Lock, Save } from 'lucide-react';
+import { User, Lock, Save, Tag, ChevronRight } from 'lucide-react';
 
 export function UserProfileScreen() {
   const { profile, user, initialize } = useAuthStore();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
 
@@ -189,6 +191,28 @@ export function UserProfileScreen() {
               </div>
             </form>
           </div>
+
+          {/* Tarifs & prix dynamiques */}
+          <button
+            type="button"
+            onClick={() => navigate('/tarifs')}
+            className="w-full text-left bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border border-neutral-200 dark:border-white/5 shadow-xl shadow-neutral-200/40 dark:shadow-none p-5 hover:border-primary/40 dark:hover:border-dark-accent/40 transition-colors"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-600 dark:text-indigo-300 border border-indigo-500/20">
+                  <Tag className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-primary dark:text-white">Tarifs & prix dynamiques</h3>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Bibliothèque de tarifs réutilisables, application en masse aux produits et recalcul des ventes passées.
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-neutral-400 shrink-0" />
+            </div>
+          </button>
 
           {/* Security Note */}
           <div className="bg-white dark:bg-dark-card/40 dark:backdrop-blur-md rounded-2xl border border-neutral-200 dark:border-white/5 shadow-xl shadow-neutral-200/40 dark:shadow-none p-8">
