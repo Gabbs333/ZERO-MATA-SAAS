@@ -184,31 +184,17 @@ export function DashboardScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
-  // Composition des factures concernées par les encaissements de la période
-  // (permet de ventiler correctement les ventes Bar / Cuisine, y compris les anciennes factures globales)
-  const { data: facturesData } = useSupabaseQuery(
-    ['dashboard_factures_split', dateRange.start.toISOString(), dateRange.end.toISOString(), profile?.etablissement_id],
+  // KPIs par département — modèle comptable unique (côté backend) :
+  //   CA facturé = encaissé + impayés, ventilé par facture (Bar / Cuisine).
+  const { data: deptKpis, isLoading: deptLoading } = useSupabaseQuery(
+    ['dashboard_kpis_departements', dateRange.start.toISOString(), dateRange.end.toISOString()],
     async () => {
-      if (!profile?.etablissement_id) return { data: [], error: null };
-
-      const { data: encs, error: encErr } = await supabase
-        .from('encaissements')
-        .select('facture_id')
-        .eq('etablissement_id', profile.etablissement_id)
-        .gte('date_encaissement', dateRange.start.toISOString())
-        .lte('date_encaissement', dateRange.end.toISOString());
-
-      if (encErr) return { data: [], error: encErr };
-
-      const ids = [...new Set((encs || []).map((e: any) => e.facture_id).filter(Boolean))];
-      if (ids.length === 0) return { data: [], error: null };
-
-      const { data, error } = await supabase
-        .from('factures')
-        .select('id, numero_facture, commandes(commande_items(montant_ligne, prix_unitaire, quantite, produits(categorie)))')
-        .in('id', ids);
-
-      return { data: data || [], error };
+      if (!profile?.etablissement_id) return { data: null, error: null };
+      const { data, error } = await supabase.rpc('get_kpis_departements', {
+        p_debut: dateRange.start.toISOString(),
+        p_fin: dateRange.end.toISOString(),
+      });
+      return { data: (data as any) || null, error };
     },
     { enabled: !!profile?.etablissement_id }
   );
@@ -232,58 +218,11 @@ export function DashboardScreen() {
     // Robustness: Handle missing data gracefully
     const cmds = commandesData || [];
     const encs = encaissementsData || [];
-    const facts = facturesData || [];
-
-    // Composition par facture : montants Bar / Cuisine (pour ventiler les paiements)
-    const factureSplit = new Map<string, { numero: string; bar: number; cuisine: number }>();
-    facts.forEach((f: any) => {
-      let bar = 0;
-      let cuisine = 0;
-      f.commandes?.commande_items?.forEach((it: any) => {
-        const montant = it.montant_ligne ?? ((it.prix_unitaire || 0) * (it.quantite || 0));
-        if (it.produits?.categorie === 'nourriture') cuisine += montant;
-        else bar += montant;
-      });
-      factureSplit.set(f.id, { numero: f.numero_facture || '', bar, cuisine });
-    });
 
     const ca = cmds.reduce((sum: number, cmd: any) => sum + cmd.montant_total, 0);
     const enc = encs.reduce((sum: number, pay: any) => sum + pay.montant, 0);
     const count = cmds.length;
     const panier_moyen = count > 0 ? ca / count : 0;
-
-    let ca_bar = 0;
-    let ca_cuisine = 0;
-    let encaissements_bar = 0;
-    let encaissements_cuisine = 0;
-
-    cmds.forEach((cmd: any) => {
-      cmd.commande_items?.forEach((item: any) => {
-        const montant = item.montant_ligne || (item.prix_unitaire * item.quantite);
-        if (item.produits?.categorie === 'nourriture') {
-          ca_cuisine += montant;
-        } else {
-          ca_bar += montant;
-        }
-      });
-    });
-
-    encs.forEach((pay: any) => {
-      const info = factureSplit.get(pay.facture_id);
-      const num = info?.numero || '';
-
-      if (num.includes('-BAR')) {
-        encaissements_bar += pay.montant;
-      } else if (num.includes('-CUI')) {
-        encaissements_cuisine += pay.montant;
-      } else if (info && (info.bar + info.cuisine) > 0) {
-        // Ancienne facture globale : ventilation proportionnelle au contenu réel
-        const totalSplit = info.bar + info.cuisine;
-        encaissements_bar += pay.montant * (info.bar / totalSplit);
-        encaissements_cuisine += pay.montant * (info.cuisine / totalSplit);
-      }
-      // Sinon : facture inconnue sans composition → non ventilée (évite d'inflater le bar)
-    });
 
     const nbPlatsRpc = platsServisData?.total_plats_servis || 0;
 
@@ -322,19 +261,15 @@ export function DashboardScreen() {
 
     return {
       chiffre_affaires: ca,
-      ca_bar: Math.round(ca_bar),
-      ca_cuisine: Math.round(ca_cuisine),
       encaissements: enc,
-      encaissements_bar: Math.round(encaissements_bar),
-      encaissements_cuisine: Math.round(encaissements_cuisine),
       commandes_count: count,
       panier_moyen,
       plats_servis: nbPlats,
       plats_par_produit: platsParProduit,
     };
-  }, [commandesData, encaissementsData, facturesData, platsServisData]);
+  }, [commandesData, encaissementsData, platsServisData]);
 
-  const kpisLoading = cmdLoading || encLoading || platsLoading;
+  const kpisLoading = cmdLoading || encLoading || platsLoading || deptLoading;
 
   // Client-side Chart Data Calculation
   const chartData = useMemo(() => {
@@ -523,6 +458,9 @@ export function DashboardScreen() {
       impaye: { montant: reconciliation.impaye_hors_credit, pct: pct(reconciliation.impaye_hors_credit) },
     };
   }, [reconciliation]);
+
+  // Base des pourcentages par département : CA facturé total de la période
+  const deptTotalCa: number = deptKpis?.total?.chiffre_affaires || 0;
 
   // Fetch pending validations for the period
   const { data: pendingCommandes, isLoading: pendingLoading } = useSupabaseQuery(
@@ -860,27 +798,35 @@ export function DashboardScreen() {
 
         </div>
 
-        {/* Bar vs Cuisine Breakdown Row */}
+        {/* Bar vs Cuisine Breakdown Row — source unique : get_kpis_departements */}
         <div className="grid grid-cols-2 gap-3">
           {/* Bar Card */}
           <div className="flex flex-col gap-1.5 rounded-2xl p-4 bg-white dark:bg-dark-card/40 dark:backdrop-blur-md border border-blue-500/20 shadow-soft">
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">🍷 Bar (Boissons)</span>
               <span className="text-[10px] font-black text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-full">
-                {kpis?.chiffre_affaires ? Math.round((kpis.ca_bar / kpis.chiffre_affaires) * 100) : 0}% du CA
+                {deptTotalCa > 0 ? Math.round(((deptKpis?.bar?.chiffre_affaires || 0) / deptTotalCa) * 100) : 0}% du CA
               </span>
             </div>
-            <div className="flex justify-between items-baseline">
+            <div className="flex justify-between items-end">
               <div>
                 <p className="text-[9px] text-neutral-400 font-bold uppercase">CA</p>
                 <p className="text-primary dark:text-white text-base font-black tracking-tight">
-                  {formatMontant(kpis?.ca_bar || 0)}
+                  {formatMontant(deptKpis?.bar?.chiffre_affaires || 0)}
+                </p>
+                <p className="text-[9px] text-neutral-400 font-bold uppercase mt-1">Encaissé</p>
+                <p className="text-blue-600 dark:text-blue-400 text-sm font-black tracking-tight">
+                  {formatMontant(deptKpis?.bar?.encaissements || 0)}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[9px] text-neutral-400 font-bold uppercase">Encaissé</p>
-                <p className="text-blue-600 dark:text-blue-400 text-base font-black tracking-tight">
-                  {formatMontant(kpis?.encaissements_bar || 0)}
+                <p className="text-[9px] text-neutral-400 font-bold uppercase">Impayés</p>
+                <p className="text-red-500 dark:text-red-400 text-sm font-black tracking-tight">
+                  {formatMontant(deptKpis?.bar?.impayes || 0)}
+                </p>
+                <p className="text-[9px] text-neutral-400 font-bold uppercase mt-1">Factures</p>
+                <p className="text-neutral-600 dark:text-neutral-300 text-sm font-black tracking-tight">
+                  {deptKpis?.bar?.factures || 0}
                 </p>
               </div>
             </div>
@@ -891,20 +837,28 @@ export function DashboardScreen() {
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">🍲 Cuisine (Repas)</span>
               <span className="text-[10px] font-black text-orange-600 bg-orange-500/10 px-2 py-0.5 rounded-full">
-                {kpis?.chiffre_affaires ? Math.round((kpis.ca_cuisine / kpis.chiffre_affaires) * 100) : 0}% du CA
+                {deptTotalCa > 0 ? Math.round(((deptKpis?.cuisine?.chiffre_affaires || 0) / deptTotalCa) * 100) : 0}% du CA
               </span>
             </div>
-            <div className="flex justify-between items-baseline">
+            <div className="flex justify-between items-end">
               <div>
                 <p className="text-[9px] text-neutral-400 font-bold uppercase">CA</p>
                 <p className="text-primary dark:text-white text-base font-black tracking-tight">
-                  {formatMontant(kpis?.ca_cuisine || 0)}
+                  {formatMontant(deptKpis?.cuisine?.chiffre_affaires || 0)}
+                </p>
+                <p className="text-[9px] text-neutral-400 font-bold uppercase mt-1">Encaissé</p>
+                <p className="text-orange-600 dark:text-orange-400 text-sm font-black tracking-tight">
+                  {formatMontant(deptKpis?.cuisine?.encaissements || 0)}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[9px] text-neutral-400 font-bold uppercase">Encaissé</p>
-                <p className="text-orange-600 dark:text-orange-400 text-base font-black tracking-tight">
-                  {formatMontant(kpis?.encaissements_cuisine || 0)}
+                <p className="text-[9px] text-neutral-400 font-bold uppercase">Impayés</p>
+                <p className="text-red-500 dark:text-red-400 text-sm font-black tracking-tight">
+                  {formatMontant(deptKpis?.cuisine?.impayes || 0)}
+                </p>
+                <p className="text-[9px] text-neutral-400 font-bold uppercase mt-1">Factures</p>
+                <p className="text-neutral-600 dark:text-neutral-300 text-sm font-black tracking-tight">
+                  {deptKpis?.cuisine?.factures || 0}
                 </p>
               </div>
             </div>
