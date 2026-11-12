@@ -9,194 +9,28 @@ export function useValidateCommande(
 
   return useMutation<any, Error, string>({
     mutationFn: async (commandeId: string) => {
-      console.log('Validating commande:', commandeId);
-      
-      // Essai 1 : RPC call
+      // La validation est entièrement prise en charge par la RPC
+      // (factures scindées Bar/Cuisine, numérotation, contrôle de stock).
+      // Aucun repli côté client : une erreur doit remonter telle quelle
+      // pour que l'écran de validation propose les actions de déblocage.
       const { data, error } = await supabase.rpc('validate_commande', {
         p_commande_id: commandeId,
       });
-      
-      // Vérifier si la RPC a renvoyé une erreur logique (capturée par le bloc EXCEPTION SQL)
-      if (data && typeof data === 'object' && 'success' in data && data.success === false) {
-         console.error('RPC returned logic error:', data.error);
-         throw new Error(data.error || 'Erreur lors de la validation (RPC)');
-      }
-      
-      // If success, patch mouvements_stock (Workaround for potential missing etablissement_id in RPC)
-      if (!error) {
-        try {
-            // Fetch command to get etablissement_id
-            const { data: cmd } = await supabase
-                .from('commandes')
-                .select('etablissement_id')
-                .eq('id', commandeId)
-                .single();
-            
-            if (cmd?.etablissement_id) {
-                // Update movements created by RPC if they are missing etablissement_id
-                await supabase
-                    .from('mouvements_stock')
-                    .update({ etablissement_id: cmd.etablissement_id })
-                    .eq('reference', commandeId)
-                    .is('etablissement_id', null);
-            }
-        } catch (e) {
-            console.warn('Failed to patch mouvements_stock', e);
-        }
-      }
 
       if (error) {
-        console.log('Using manual validation flow (RPC failed)...', error.message);
-        
-        // 0. Récupérer les infos de la commande pour la facture, la table et les items
-        const { data: cmdData, error: fetchError } = await supabase
-            .from('commandes')
-            .select(`
-              table_id, 
-              montant_total, 
-              etablissement_id, 
-              numero_commande,
-              commande_items (
-                produit_id,
-                quantite,
-                nom_produit
-              )
-            `)
-            .eq('id', commandeId)
-            .single();
-            
-        if (fetchError || !cmdData) {
-             throw new Error("Impossible de récupérer la commande pour validation manuelle");
-        }
-        
-        // 0.bis Gestion du stock (Simulation de la logique RPC côté client)
-        if (cmdData.commande_items && cmdData.commande_items.length > 0) {
-          for (const item of cmdData.commande_items) {
-             // Vérifier et décrémenter le stock
-             // Note: Ceci n'est pas atomique et peut avoir des problèmes de concurrence,
-             // mais c'est le mieux qu'on puisse faire sans RPC fonctionnel.
-             
-             // Récupérer le stock actuel
-             const { data: stockData, error: stockFetchError } = await supabase
-               .from('stock')
-               .select('quantite_disponible')
-               .eq('produit_id', item.produit_id)
-               .single();
-               
-             if (!stockFetchError && stockData) {
-               if (stockData.quantite_disponible < item.quantite) {
-                 console.warn(`Stock insuffisant pour ${item.nom_produit}, on continue quand même pour débloquer`);
-               }
-               
-               // Décrémenter
-               await supabase
-                 .from('stock')
-                 .update({ 
-                   quantite_disponible: stockData.quantite_disponible - item.quantite,
-                   derniere_mise_a_jour: new Date().toISOString()
-                 })
-                 .eq('produit_id', item.produit_id);
-                 
-               // Créer mouvement (si la table existe et est accessible)
-               try {
-                 await supabase
-                   .from('mouvements_stock')
-                   .insert({
-                     produit_id: item.produit_id,
-                     type: 'sortie',
-                     quantite: item.quantite,
-                     reference: commandeId,
-                     type_reference: 'commande',
-                     utilisateur_id: (await supabase.auth.getUser()).data.user?.id,
-                     etablissement_id: cmdData.etablissement_id
-                   });
-               } catch (e) {
-                 console.warn('Impossible de créer le mouvement de stock', e);
-               }
-             }
-          }
-        }
-        
-        // 1. Mettre à jour le statut de la commande
-        const { data: updatedData, error: updateError } = await supabase
-          .from('commandes')
-          .update({ 
-            statut: 'validee',
-            date_validation: new Date().toISOString()
-          })
-          .eq('id', commandeId)
-          .select();
-          
-        if (updateError) {
-          console.error('Manual update failed:', updateError);
-          throw updateError;
-        }
-
-        if (!updatedData || updatedData.length === 0) {
-            console.error('Manual update returned no data (RLS or not found?)');
-            throw new Error("Échec de la validation : Impossible de modifier la commande (Permissions ?)");
-        }
-
-        // 2. Mettre à jour le statut de la table
-        if (cmdData.table_id) {
-            const { error: tableError } = await supabase
-                .from('tables')
-                .update({ statut: 'occupee' })
-                .eq('id', cmdData.table_id);
-                
-            if (tableError) {
-                console.error('Error updating table status:', tableError);
-            } else {
-                console.log('Table status updated to occupee');
-            }
-        }
-
-        // 3. Créer la facture (ESSENTIEL pour l'encaissement)
-        // Vérifier si une facture existe déjà pour éviter les doublons
-        const { data: existingFacture } = await supabase
-            .from('factures')
-            .select('id')
-            .eq('commande_id', commandeId)
-            .maybeSingle();
-
-        if (!existingFacture) {
-            // On laisse le trigger générer le numéro si on ne le fournit pas, 
-            // ou on en génère un temporaire si besoin.
-            // Pour être sûr, on utilise un timestamp.
-            const numeroFacture = `FAC-${new Date().getTime().toString().slice(-6)}`;
-            
-            const { error: factureError } = await supabase
-                .from('factures')
-                .insert({
-                    commande_id: commandeId,
-                    montant_total: cmdData.montant_total,
-                    statut: 'en_attente_paiement',
-                    montant_paye: 0,
-                    etablissement_id: cmdData.etablissement_id,
-                    numero_facture: numeroFacture
-                });
-            
-            if (factureError) {
-                console.error('Error creating facture:', factureError);
-                // On log mais on ne bloque pas si la commande est validée
-            } else {
-                console.log('Facture created successfully:', numeroFacture);
-            }
-        } else {
-            console.log('Facture already exists, skipping creation');
-        }
-        
-        return { success: true, message: 'Validated manually', data: updatedData };
+        throw new Error(error.message);
       }
-      
-      console.log('RPC validation successful'); 
+
+      if (data && typeof data === 'object' && 'success' in data && data.success === false) {
+        throw new Error((data as any).error || 'Erreur lors de la validation');
+      }
+
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['commandes'] });
       queryClient.invalidateQueries({ queryKey: ['stocks'] });
       queryClient.invalidateQueries({ queryKey: ['factures'] });
-      // Invalider les tables aussi car leur statut change
       queryClient.invalidateQueries({ queryKey: ['tables'] });
     },
     ...options,

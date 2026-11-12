@@ -9,7 +9,11 @@ import {
   Eye,
   Loader2,
   AlertCircle,
-  RefreshCcw
+  RefreshCcw,
+  Edit3,
+  Minus,
+  Plus,
+  PackagePlus
 } from 'lucide-react';
 import { useCommandesEnAttente, useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { useValidateCommande } from '../hooks/useSupabaseMutation';
@@ -24,6 +28,14 @@ export default function ValidationScreen() {
   const { mutate: validateCommande, isPending } = useValidateCommande();
   const [selectedCommande, setSelectedCommande] = useState<CommandeWithDetails | null>(null);
   const [error, setError] = useState('');
+
+  // Déblocage des commandes bloquées par un stock insuffisant
+  const [stockIssue, setStockIssue] = useState<{ commande: CommandeWithDetails; manques: any[] } | null>(null);
+  const [editCommande, setEditCommande] = useState<CommandeWithDetails | null>(null);
+  const [editLines, setEditLines] = useState<{ produit_id: string; nom: string; quantite: number; prix_unitaire: number }[]>([]);
+  const [restock, setRestock] = useState<{ produit_id: string; nom: string; commande: CommandeWithDetails; quantite: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [addProduitId, setAddProduitId] = useState('');
 
   // Filtre par catégorie pour chaque carte de commande ('all' | 'boisson' | 'nourriture')
   const [cardFilters, setCardFilters] = useState<Record<string, 'all' | 'boisson' | 'nourriture'>>({});
@@ -53,6 +65,21 @@ export default function ValidationScreen() {
         .eq('actif', true)
         .order('nom');
       return { data, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  const { data: produits } = useSupabaseQuery<{ id: string; nom: string; prix_vente: number; categorie: string }[]>(
+    ['produits_comptoir', profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error: produitsError } = await supabase
+        .from('produits')
+        .select('id, nom, prix_vente, categorie')
+        .eq('etablissement_id', profile.etablissement_id)
+        .eq('actif', true)
+        .order('nom');
+      return { data: data || [], error: produitsError };
     },
     { enabled: !!profile?.etablissement_id }
   );
@@ -97,14 +124,171 @@ export default function ValidationScreen() {
     if (pending) {
       await pending;
     }
+
+    const commande = commandes?.find((c) => c.id === commandeId) || null;
+
     validateCommande(commandeId, {
       onSuccess: () => {
         setSelectedCommande(null);
+        setStockIssue(null);
       },
-      onError: (err: any) => {
-        setError(err.message || 'Erreur lors de la validation');
+      onError: async (err: any) => {
+        const msg = err?.message || 'Erreur lors de la validation';
+        setError(msg);
+        // Stock insuffisant : on charge le diagnostic actionnable
+        if (commande && /stock/i.test(msg)) {
+          const { data } = await supabase.rpc('diagnostic_stock_commande', { p_commande_id: commandeId });
+          const manques = (data as any)?.manques || [];
+          setStockIssue(manques.length > 0 ? { commande, manques } : null);
+        }
       },
     });
+  };
+
+  const refreshStockIssue = async (commande: CommandeWithDetails) => {
+    const { data } = await supabase.rpc('diagnostic_stock_commande', { p_commande_id: commande.id });
+    const manques = (data as any)?.manques || [];
+    setStockIssue(manques.length > 0 ? { commande, manques } : null);
+  };
+
+  const handleAnnuler = async (commande: CommandeWithDetails) => {
+    const motif = window.prompt(
+      `Motif d'annulation de la commande ${commande.numero_commande || ''} :`,
+      'Rupture de stock'
+    );
+    if (motif === null) return;
+
+    setBusy(true);
+    const { error: rpcError } = await supabase.rpc('annuler_commande', {
+      p_commande_id: commande.id,
+      p_motif: motif,
+    });
+    setBusy(false);
+
+    if (rpcError) {
+      setError(rpcError.message);
+      return;
+    }
+
+    setStockIssue(null);
+    setSelectedCommande(null);
+    await refetch();
+  };
+
+  const openEdit = (commande: CommandeWithDetails) => {
+    setEditCommande(commande);
+    setAddProduitId('');
+    setEditLines(
+      (commande.commande_items || []).map((it) => ({
+        produit_id: it.produit_id,
+        nom: it.produits?.nom || it.nom_produit,
+        quantite: it.quantite,
+        prix_unitaire: it.prix_unitaire,
+      }))
+    );
+  };
+
+  const saveEdit = async () => {
+    if (!editCommande) return;
+    const items = editLines
+      .filter((l) => l.quantite > 0)
+      .map((l) => ({ produit_id: l.produit_id, quantite: l.quantite, prix_unitaire: l.prix_unitaire }));
+
+    if (items.length === 0) {
+      setError('La commande doit contenir au moins un article. Utilisez « Annuler » pour la supprimer.');
+      return;
+    }
+
+    setBusy(true);
+    const { error: rpcError } = await supabase.rpc('modifier_commande_en_attente', {
+      p_commande_id: editCommande.id,
+      p_items: items,
+    });
+    setBusy(false);
+
+    if (rpcError) {
+      setError(rpcError.message);
+      return;
+    }
+
+    setEditCommande(null);
+    setStockIssue(null);
+    await refetch();
+  };
+
+  /** Réduit une ligne au stock disponible, puis rafraîchit le diagnostic. */
+  const applyReduce = async (manque: any) => {
+    if (!stockIssue) return;
+    const items = (stockIssue.commande.commande_items || [])
+      .map((it) => ({
+        produit_id: it.produit_id,
+        quantite: it.produit_id === manque.produit_id ? Number(manque.disponible) : it.quantite,
+        prix_unitaire: it.prix_unitaire,
+      }))
+      .filter((i) => i.quantite > 0);
+
+    if (items.length === 0) {
+      setError('Aucun article restant : annulez la commande.');
+      return;
+    }
+
+    setBusy(true);
+    const { error: rpcError } = await supabase.rpc('modifier_commande_en_attente', {
+      p_commande_id: stockIssue.commande.id,
+      p_items: items,
+    });
+    setBusy(false);
+
+    if (rpcError) {
+      setError(rpcError.message);
+      return;
+    }
+
+    const updated = { ...stockIssue.commande };
+    await refetch();
+    await refreshStockIssue(updated);
+  };
+
+  const saveRestock = async () => {
+    if (!restock) return;
+    const q = Number(restock.quantite);
+    if (!Number.isFinite(q) || q <= 0) {
+      setError('Quantité invalide.');
+      return;
+    }
+
+    setBusy(true);
+    const { error: rpcError } = await supabase.rpc('ravitailler_produit_express', {
+      p_produit_id: restock.produit_id,
+      p_quantite: q,
+      p_commentaire: `Déblocage commande ${restock.commande.numero_commande || ''}`.trim(),
+    });
+    setBusy(false);
+
+    if (rpcError) {
+      setError(rpcError.message);
+      return;
+    }
+
+    const commande = restock.commande;
+    setRestock(null);
+    await refetch();
+    await refreshStockIssue(commande);
+  };
+
+  const addEditLine = () => {
+    if (!addProduitId) return;
+    if (editLines.some((l) => l.produit_id === addProduitId)) {
+      setError('Ce produit est déjà dans la commande.');
+      return;
+    }
+    const p = (produits || []).find((x) => x.id === addProduitId);
+    if (!p) return;
+    setEditLines((prev) => [
+      ...prev,
+      { produit_id: p.id, nom: p.nom, quantite: 1, prix_unitaire: p.prix_vente },
+    ]);
+    setAddProduitId('');
   };
 
   const totalAmount = commandes?.reduce((sum, cmd) => sum + cmd.montant_total, 0) || 0;
@@ -174,6 +358,86 @@ export default function ValidationScreen() {
             <button onClick={() => setError('')} className="hover:bg-semantic-red/20 p-1 rounded-full transition-colors">
               <X className="w-4 h-4" />
             </button>
+          </div>
+        )}
+
+        {/* Panneau de déblocage : stock insuffisant */}
+        {stockIssue && (
+          <div className="bg-semantic-amber/10 border border-semantic-amber/30 rounded-xl p-4 space-y-3 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-semantic-amber shrink-0" />
+                <div>
+                  <p className="font-bold text-primary dark:text-white text-sm">
+                    Stock insuffisant — commande {stockIssue.commande.numero_commande || ''}
+                  </p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Débloquez avec une des actions ci-dessous, puis relancez la validation.
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setStockIssue(null)} className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10">
+                <X className="w-4 h-4 text-neutral-500" />
+              </button>
+            </div>
+
+            <div className="divide-y divide-black/5 dark:divide-white/10">
+              {stockIssue.manques.map((m: any) => (
+                <div key={m.produit_id} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm">
+                    <span className="font-bold text-primary dark:text-white">{m.nom}</span>
+                    <span className="ml-2 text-xs text-neutral-500 dark:text-neutral-400">
+                      demandé {m.quantite} · disponible {m.disponible} · manque {m.manque}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={busy || Number(m.disponible) <= 0}
+                      onClick={() => applyReduce(m)}
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Réduire à {m.disponible}
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        setRestock({
+                          produit_id: m.produit_id,
+                          nom: m.nom,
+                          commande: stockIssue.commande,
+                          quantite: String(m.manque),
+                        })
+                      }
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-semantic-green/10 text-semantic-green border border-semantic-green/20 hover:bg-semantic-green/20 transition-colors disabled:opacity-40"
+                    >
+                      Ravitailler
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                onClick={() => openEdit(stockIssue.commande)}
+                className="px-3 py-2 rounded-lg text-xs font-bold bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors"
+              >
+                Modifier la commande
+              </button>
+              <button
+                onClick={() => handleAnnuler(stockIssue.commande)}
+                className="px-3 py-2 rounded-lg text-xs font-bold bg-semantic-red/10 text-semantic-red border border-semantic-red/20 hover:bg-semantic-red/20 transition-colors"
+              >
+                Annuler la commande
+              </button>
+              <button
+                onClick={() => handleValidate(stockIssue.commande.id)}
+                disabled={isPending}
+                className="px-3 py-2 rounded-lg text-xs font-bold bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                Réessayer la validation
+              </button>
+            </div>
           </div>
         )}
 
@@ -331,23 +595,39 @@ export default function ValidationScreen() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       onClick={() => setSelectedCommande(commande)}
-                      className="h-11 rounded-xl border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 font-bold text-sm hover:bg-neutral-50 dark:hover:bg-white/5 flex items-center justify-center gap-2 transition-all duration-200 hover:shadow-sm"
+                      className="h-11 rounded-xl border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 font-bold text-xs hover:bg-neutral-50 dark:hover:bg-white/5 flex items-center justify-center gap-1.5 transition-all duration-200 hover:shadow-sm"
                     >
                       <Eye className="w-4 h-4" />
                       Détails
                     </button>
                     <button
+                      onClick={() => openEdit(commande)}
+                      disabled={busy}
+                      className="h-11 rounded-xl border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 font-bold text-xs hover:bg-neutral-50 dark:hover:bg-white/5 flex items-center justify-center gap-1.5 transition-all duration-200 hover:shadow-sm disabled:opacity-50"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                      Modifier
+                    </button>
+                    <button
                       onClick={() => handleValidate(commande.id)}
                       disabled={isPending}
-                      className="h-11 rounded-xl bg-gradient-to-r from-primary to-blue-600 hover:from-blue-600 hover:to-primary text-white font-bold text-sm flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none hover:-translate-y-0.5 active:translate-y-0"
+                      className="h-11 rounded-xl bg-gradient-to-r from-primary to-blue-600 hover:from-blue-600 hover:to-primary text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none hover:-translate-y-0.5 active:translate-y-0"
                     >
                       {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                       Valider
                     </button>
                   </div>
+
+                  <button
+                    onClick={() => handleAnnuler(commande)}
+                    disabled={busy}
+                    className="w-full text-[11px] font-bold text-neutral-400 hover:text-semantic-red transition-colors disabled:opacity-50"
+                  >
+                    Annuler la commande
+                  </button>
                 </div>
               </div>
             )})}
@@ -441,6 +721,186 @@ export default function ValidationScreen() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale de modification des lignes */}
+      {editCommande && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-neutral-800 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-neutral-100 dark:border-neutral-700 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-lg text-primary dark:text-white">Modifier la commande</h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {editCommande.numero_commande} · ajustez les quantités ou retirez des articles
+                </p>
+              </div>
+              <button
+                onClick={() => setEditCommande(null)}
+                className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-neutral-500" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 overflow-y-auto flex-1">
+              {editLines.length === 0 && (
+                <p className="text-sm text-neutral-400 italic">Aucun article. Ajoutez-en un ou annulez la commande.</p>
+              )}
+
+              {editLines.map((line) => (
+                <div
+                  key={line.produit_id}
+                  className="flex items-center justify-between gap-3 p-2 rounded-xl border border-neutral-200 dark:border-neutral-700"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-primary dark:text-white truncate">{line.nom}</p>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                      {formatPrice(line.prix_unitaire)} × {line.quantite} = {formatPrice(line.prix_unitaire * line.quantite)}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditLines((prev) =>
+                          prev.map((l) =>
+                            l.produit_id === line.produit_id
+                              ? { ...l, quantite: Math.max(0, l.quantite - 1) }
+                              : l
+                          )
+                        )
+                      }
+                      className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-700 flex items-center justify-center hover:bg-neutral-200 dark:hover:bg-neutral-600 transition-colors"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="w-8 text-center font-bold tabular-nums text-primary dark:text-white">
+                      {line.quantite}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditLines((prev) =>
+                          prev.map((l) =>
+                            l.produit_id === line.produit_id ? { ...l, quantite: l.quantite + 1 } : l
+                          )
+                        )
+                      }
+                      className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-700 flex items-center justify-center hover:bg-neutral-200 dark:hover:bg-neutral-600 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditLines((prev) => prev.filter((l) => l.produit_id !== line.produit_id))}
+                      className="w-8 h-8 rounded-lg text-semantic-red hover:bg-semantic-red/10 flex items-center justify-center transition-colors"
+                      title="Retirer l'article"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex gap-2 pt-2">
+                <select
+                  value={addProduitId}
+                  onChange={(e) => setAddProduitId(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 rounded-lg text-sm text-neutral-900 dark:text-white outline-none"
+                >
+                  <option value="">Ajouter un produit…</option>
+                  {(produits || [])
+                    .filter((p) => !editLines.some((l) => l.produit_id === p.id))
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nom} — {formatPrice(p.prix_vente)}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={addEditLine}
+                  disabled={!addProduitId}
+                  className="px-3 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 text-sm font-bold disabled:opacity-40"
+                >
+                  Ajouter
+                </button>
+              </div>
+
+              <div className="flex justify-between items-center pt-3 border-t border-neutral-100 dark:border-neutral-700">
+                <span className="text-sm font-bold text-neutral-500 dark:text-neutral-400">Nouveau total</span>
+                <span className="text-lg font-bold text-primary dark:text-white tabular-nums">
+                  {formatPrice(editLines.reduce((sum, l) => sum + l.prix_unitaire * l.quantite, 0))}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-neutral-100 dark:border-neutral-700 flex gap-3">
+              <button
+                onClick={() => setEditCommande(null)}
+                className="flex-1 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-600 text-neutral-600 dark:text-neutral-300 font-bold hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={busy}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {busy ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale de ravitaillement express */}
+      {restock && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-neutral-800 w-full max-w-sm rounded-2xl shadow-2xl p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-semantic-green/10 text-semantic-green">
+                <PackagePlus className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-primary dark:text-white">Ravitailler « {restock.nom} »</h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Entrée de stock immédiate, tracée comme ravitaillement.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 mb-1">
+                Quantité reçue
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={restock.quantite}
+                onChange={(e) => setRestock({ ...restock, quantite: e.target.value })}
+                className="w-full px-3 py-2 bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 rounded-lg text-sm text-primary dark:text-white outline-none"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRestock(null)}
+                className="flex-1 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-600 text-neutral-600 dark:text-neutral-300 font-bold hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={saveRestock}
+                disabled={busy}
+                className="flex-1 py-2.5 rounded-xl bg-semantic-green text-white font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {busy ? 'Enregistrement…' : 'Valider l\'entrée'}
+              </button>
             </div>
           </div>
         </div>
