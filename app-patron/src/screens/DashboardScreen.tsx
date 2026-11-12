@@ -826,10 +826,10 @@ export function DashboardScreen() {
               {kpisLoading && <div className="size-3 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>}
             </div>
             <p className="text-primary dark:text-white text-xl font-black tracking-tight">
-              {formatMontant(kpis?.chiffre_affaires || 0)}
+              {formatMontant(reconciliation.ca_facture)}
             </p>
             <div className="flex items-center justify-between mt-1">
-              <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-bold uppercase tracking-wider">Montant Brut</span>
+              <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-bold uppercase tracking-wider">CA facturé (net)</span>
               <span className="text-[10px] font-black text-green-500 bg-green-500/10 dark:bg-green-500/10 px-2 py-0.5 rounded-full flex items-center gap-0.5">
                 {kpis?.commandes_count || 0} commandes
               </span>

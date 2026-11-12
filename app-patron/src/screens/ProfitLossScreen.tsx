@@ -114,6 +114,7 @@ export function ProfitLossScreen() {
           )
         `)
         .eq('etablissement_id', profile.etablissement_id)
+        .in('commandes.statut', ['validee', 'terminee'])
         .gte('commandes.date_creation', period.start.toISOString())
         .lte('commandes.date_creation', period.end.toISOString());
 

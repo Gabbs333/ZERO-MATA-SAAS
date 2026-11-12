@@ -93,6 +93,25 @@ export function FinancialDashboardScreen() {
     { enabled: !!profile?.etablissement_id }
   );
 
+  // 2bis. Factures de la période : base de réconciliation (CA = encaissé + impayé)
+  const { data: facturesPeriodeData, isLoading: factLoading } = useSupabaseQuery(
+    ['financial_factures_periode', start.toISOString(), end.toISOString(), profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('factures')
+        .select('montant_total, montant_paye, montant_restant, credit_sur')
+        .eq('etablissement_id', profile.etablissement_id)
+        .gte('date_generation', start.toISOString())
+        .lte('date_generation', end.toISOString())
+        .limit(5000);
+
+      if (error) throw error;
+      return { data: data || [], error: null };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
   // 3. Fetch Ravitaillements (Display Only)
   const { data: suppliesData, isLoading: suppliesLoading } = useSupabaseQuery(
     ['financial_supplies', start.toISOString(), end.toISOString()],
@@ -141,8 +160,14 @@ export function FinancialDashboardScreen() {
       });
     });
 
-    // Collections (Encaissements)
+    // Collections (Encaissements reçus dans la période)
     const encaissements = encs.reduce((sum, enc) => sum + enc.montant, 0);
+
+    // Réconciliation sur les factures de la période
+    const facts = facturesPeriodeData || [];
+    const ca_facture = facts.reduce((sum: number, f: any) => sum + (f.montant_total || 0), 0);
+    const encaisse_factures = facts.reduce((sum: number, f: any) => sum + (f.montant_paye || 0), 0);
+    const impayes = facts.reduce((sum: number, f: any) => sum + (f.montant_restant || 0), 0);
 
     // Supplies Total
     const ravitaillements = supplies.reduce((sum, sup) => sum + sup.montant_total, 0);
@@ -153,21 +178,24 @@ export function FinancialDashboardScreen() {
     const marge_bar = ca_bar - cout_achat_bar;
     const marge_cuisine = ca_cuisine - cout_achat_cuisine;
 
-    // Shortfall (Manque à Gagner)
-    const manque_a_gagner = chiffre_affaires - encaissements;
+    // Manque à gagner = reste à encaisser sur les factures de la période
+    const manque_a_gagner = impayes;
 
     return {
       chiffre_affaires,
+      ca_facture,
       ca_bar,
       ca_cuisine,
       encaissements,
+      encaisse_factures,
+      impayes,
       ravitaillements,
       marge_brute,
       marge_bar,
       marge_cuisine,
       manque_a_gagner
     };
-  }, [commandesData, encaissementsData, suppliesData]);
+  }, [commandesData, encaissementsData, facturesPeriodeData, suppliesData]);
 
   // 5. Prepare Chart Data
   const chartData = useMemo(() => {
@@ -205,7 +233,7 @@ export function FinancialDashboardScreen() {
     });
   }, [commandesData, encaissementsData, start, end]);
 
-  const isLoading = cmdLoading || encLoading || suppliesLoading;
+  const isLoading = cmdLoading || encLoading || suppliesLoading || factLoading;
 
   return (
     <div className="pb-20 md:pb-6 min-h-screen bg-neutral-50 dark:bg-dark-bg">
@@ -277,10 +305,13 @@ export function FinancialDashboardScreen() {
                 <Wallet className="w-6 h-6 text-blue-500" />
               </div>
             </div>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 font-bold uppercase tracking-wider">Total Encaissé</p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 font-bold uppercase tracking-wider">Encaissé (factures)</p>
             <h3 className="text-2xl font-black text-primary dark:text-white mt-1">
-              {isLoading ? '...' : formatMontant(metrics.encaissements)}
+              {isLoading ? '...' : formatMontant(metrics.encaisse_factures)}
             </h3>
+            <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-1">
+              Reçus sur la période : {formatMontant(metrics.encaissements)}
+            </p>
           </div>
 
           {/* Supplies Card (Display Only) */}
