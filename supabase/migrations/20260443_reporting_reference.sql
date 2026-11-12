@@ -26,18 +26,90 @@
 -- ============================================================================
 -- 0. NETTOYAGE DES OBJETS CASSÉS / HÉRITÉS
 -- ============================================================================
+--
+--   0.a PURGE DES OBJETS QUI RÉFÉRENCENT `v_etab` COMME UNE TABLE.
+--
+--   `v_etab` n'est qu'un nom de variable locale dans les fonctions. Si une
+--   version antérieure (collée à la main dans le SQL Editor, snippet, ou outil
+--   tiers) a créé une fonction ou une vue qui fait `FROM v_etab`, PostgreSQL
+--   échoue à l'exécution avec :
+--       ERROR: 42P01: relation "v_etab" does not exist
+--   On supprime donc proactivement ces objets résiduels avant toute création.
 
-DROP FUNCTION IF EXISTS public.get_analytics_ca_encaissements(TIMESTAMPTZ, TIMESTAMPTZ);
-DROP FUNCTION IF EXISTS public.get_payment_modes_stats(TIMESTAMPTZ, TIMESTAMPTZ);
-DROP FUNCTION IF EXISTS public.search_transactions(TIMESTAMPTZ, TIMESTAMPTZ, UUID, UUID, UUID, INTEGER, INTEGER);
-DROP FUNCTION IF EXISTS public.get_kpis(TIMESTAMPTZ, TIMESTAMPTZ);
-DROP FUNCTION IF EXISTS public.get_dashboard_kpis(TIMESTAMPTZ, TIMESTAMPTZ);
-DROP FUNCTION IF EXISTS public.get_analytics(TIMESTAMPTZ, TIMESTAMPTZ, TEXT);
-DROP FUNCTION IF EXISTS public.get_ventes_par_produit(TIMESTAMPTZ, TIMESTAMPTZ);
+DO $purge_v_etab$
+DECLARE
+  r RECORD;
+  v_nb INTEGER := 0;
+BEGIN
+  FOR r IN
+    SELECT p.oid::regprocedure AS signature
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.prokind = 'f'
+      AND pg_get_functiondef(p.oid) ~* '(from|join)[[:space:]]+v_etab([^a-z0-9_]|$)'
+  LOOP
+    EXECUTE format('DROP FUNCTION %s CASCADE', r.signature);
+    v_nb := v_nb + 1;
+  END LOOP;
 
-DROP VIEW IF EXISTS public.analytics_ca_encaissements;
-DROP VIEW IF EXISTS public.analytics_by_payment_mode;
-DROP VIEW IF EXISTS public.analytics_creances;
+  FOR r IN
+    SELECT c.oid::regclass AS nom, c.relkind
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('v', 'm')
+      AND pg_get_viewdef(c.oid) ~* '(from|join)[[:space:]]+v_etab([^a-z0-9_]|$)'
+  LOOP
+    EXECUTE format(
+      'DROP %s %s CASCADE',
+      CASE WHEN r.relkind = 'm' THEN 'MATERIALIZED VIEW' ELSE 'VIEW' END,
+      r.nom
+    );
+    v_nb := v_nb + 1;
+  END LOOP;
+
+  IF v_nb > 0 THEN
+    RAISE NOTICE 'reporting_reference: % objet(s) résiduel(s) référençant v_etab supprimé(s).', v_nb;
+  END IF;
+END
+$purge_v_etab$;
+
+--   0.b SUPPRESSION DE TOUS LES SURCHARGES DE NOS RPC DE REPORTING.
+--   On passe par le catalogue plutôt que par une signature figée : cela évite
+--   les conflits de type de retour (`cannot change return type`) et les
+--   surcharges orphelines laissées par les versions précédentes.
+
+DO $purge_reporting$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN
+    SELECT p.oid::regprocedure AS signature
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.prokind = 'f'
+      AND p.proname IN (
+        'reporting_scope',
+        'get_kpis',
+        'get_dashboard_kpis',
+        'get_analytics_ca_encaissements',
+        'get_ventes_par_produit',
+        'get_analytics',
+        'get_payment_modes_stats',
+        'search_transactions'
+      )
+  LOOP
+    EXECUTE format('DROP FUNCTION %s CASCADE', r.signature);
+  END LOOP;
+END
+$purge_reporting$;
+
+DROP VIEW IF EXISTS public.analytics_ca_encaissements CASCADE;
+DROP VIEW IF EXISTS public.analytics_by_payment_mode CASCADE;
+DROP VIEW IF EXISTS public.analytics_creances CASCADE;
+DROP VIEW IF EXISTS public.plats_servis_journalier CASCADE;
 
 -- ============================================================================
 -- 1. CONTEXTE D'APPEL (établissement + fuseau)
@@ -188,7 +260,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_etab UUID;
+  v_establishment UUID;
   v_tz TEXT;
   v_ca BIGINT := 0;
   v_encaisse BIGINT := 0;
@@ -197,9 +269,9 @@ DECLARE
   v_nb_commandes BIGINT := 0;
   v_cogs BIGINT := 0;
 BEGIN
-  SELECT etablissement_id, tz INTO v_etab, v_tz FROM public.reporting_scope();
+  SELECT etablissement_id, tz INTO v_establishment, v_tz FROM public.reporting_scope();
 
-  IF v_etab IS NULL THEN
+  IF v_establishment IS NULL THEN
     RAISE EXCEPTION 'Aucun établissement associé à votre compte.';
   END IF;
 
@@ -211,7 +283,7 @@ BEGIN
     COUNT(*) FILTER (WHERE f.statut <> 'payee')
   INTO v_ca, v_encaisse, v_impayes, v_nb_factures_impayees
   FROM factures f
-  WHERE f.etablissement_id = v_etab
+  WHERE f.etablissement_id = v_establishment
     AND f.date_generation >= p_debut
     AND f.date_generation <= p_fin;
 
@@ -219,7 +291,7 @@ BEGIN
   SELECT COUNT(*)
   INTO v_nb_commandes
   FROM commandes c
-  WHERE c.etablissement_id = v_etab
+  WHERE c.etablissement_id = v_establishment
     AND c.statut IN ('validee', 'terminee')
     AND COALESCE(c.date_validation, c.date_creation) >= p_debut
     AND COALESCE(c.date_validation, c.date_creation) <= p_fin;
@@ -229,7 +301,7 @@ BEGIN
   INTO v_cogs
   FROM mouvements_stock ms
   JOIN produits p ON p.id = ms.produit_id
-  WHERE ms.etablissement_id = v_etab
+  WHERE ms.etablissement_id = v_establishment
     AND ms.type = 'sortie'
     AND ms.type_reference = 'commande'
     AND ms.date_creation >= p_debut
@@ -260,13 +332,13 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_etab UUID;
+  v_establishment UUID;
   v_tz TEXT;
   v_row RECORD;
   v_result JSON;
 BEGIN
-  SELECT etablissement_id, tz INTO v_etab, v_tz FROM public.reporting_scope();
-  IF v_etab IS NULL THEN
+  SELECT etablissement_id, tz INTO v_establishment, v_tz FROM public.reporting_scope();
+  IF v_establishment IS NULL THEN
     RAISE EXCEPTION 'Aucun établissement associé à votre compte.';
   END IF;
 
@@ -284,7 +356,7 @@ BEGIN
     'ventes_a_credit', (
       SELECT COALESCE(SUM(f.montant_restant), 0)
       FROM factures f
-      WHERE f.etablissement_id = v_etab
+      WHERE f.etablissement_id = v_establishment
         AND f.credit_sur = true
         AND f.date_generation >= p_debut
         AND f.date_generation <= p_fin
@@ -292,7 +364,7 @@ BEGIN
     'encaissements_recus', (
       SELECT COALESCE(SUM(e.montant), 0)
       FROM encaissements e
-      WHERE e.etablissement_id = v_etab
+      WHERE e.etablissement_id = v_establishment
         AND e.date_encaissement >= p_debut
         AND e.date_encaissement <= p_fin
     ),
@@ -326,12 +398,12 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_etab UUID;
+  v_establishment UUID;
   v_tz TEXT;
 BEGIN
-  SELECT etablissement_id, tz INTO v_etab, v_tz FROM public.reporting_scope();
+  SELECT etablissement_id, tz INTO v_establishment, v_tz FROM public.reporting_scope();
 
-  IF v_etab IS NULL THEN
+  IF v_establishment IS NULL THEN
     RAISE EXCEPTION 'Aucun établissement associé à votre compte.';
   END IF;
 
@@ -349,7 +421,7 @@ BEGIN
            COALESCE(SUM(f.montant_restant), 0)::BIGINT AS impayes,
            COUNT(*)::BIGINT AS nb_factures
     FROM factures f
-    WHERE f.etablissement_id = v_etab
+    WHERE f.etablissement_id = v_establishment
       AND f.date_generation >= p_debut
       AND f.date_generation <= p_fin
     GROUP BY (f.date_generation AT TIME ZONE v_tz)::date
@@ -358,7 +430,7 @@ BEGIN
     SELECT (e.date_encaissement AT TIME ZONE v_tz)::date AS jour,
            COALESCE(SUM(e.montant), 0)::BIGINT AS total
     FROM encaissements e
-    WHERE e.etablissement_id = v_etab
+    WHERE e.etablissement_id = v_establishment
       AND e.date_encaissement >= p_debut
       AND e.date_encaissement <= p_fin
     GROUP BY (e.date_encaissement AT TIME ZONE v_tz)::date
@@ -367,7 +439,7 @@ BEGIN
     SELECT (COALESCE(c.date_validation, c.date_creation) AT TIME ZONE v_tz)::date AS jour,
            COUNT(*)::BIGINT AS nb
     FROM commandes c
-    WHERE c.etablissement_id = v_etab
+    WHERE c.etablissement_id = v_establishment
       AND c.statut IN ('validee', 'terminee')
       AND COALESCE(c.date_validation, c.date_creation) >= p_debut
       AND COALESCE(c.date_validation, c.date_creation) <= p_fin
@@ -411,10 +483,10 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_etab UUID;
+  v_establishment UUID;
 BEGIN
-  SELECT etablissement_id INTO v_etab FROM public.reporting_scope();
-  IF v_etab IS NULL THEN
+  SELECT etablissement_id INTO v_establishment FROM public.reporting_scope();
+  IF v_establishment IS NULL THEN
     RAISE EXCEPTION 'Aucun établissement associé à votre compte.';
   END IF;
 
@@ -432,7 +504,7 @@ BEGIN
   FROM commande_items ci
   JOIN commandes c ON c.id = ci.commande_id
   JOIN produits p ON p.id = ci.produit_id
-  WHERE c.etablissement_id = v_etab
+  WHERE c.etablissement_id = v_establishment
     AND c.statut IN ('validee', 'terminee')
     AND COALESCE(c.date_validation, c.date_creation) >= p_debut
     AND COALESCE(c.date_validation, c.date_creation) <= p_fin
@@ -459,7 +531,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_etab UUID;
+  v_establishment UUID;
   v_tz TEXT;
   v_gran TEXT := COALESCE(NULLIF(LOWER(p_granularite), ''), 'jour');
   v_kpis JSON;
@@ -470,8 +542,8 @@ BEGIN
     RAISE EXCEPTION 'Granularité invalide. Valeurs acceptées : heure, jour, semaine, mois';
   END IF;
 
-  SELECT etablissement_id, tz INTO v_etab, v_tz FROM public.reporting_scope();
-  IF v_etab IS NULL THEN
+  SELECT etablissement_id, tz INTO v_establishment, v_tz FROM public.reporting_scope();
+  IF v_establishment IS NULL THEN
     RAISE EXCEPTION 'Aucun établissement associé à votre compte.';
   END IF;
 
@@ -492,7 +564,7 @@ BEGIN
       COALESCE(SUM(c.montant_total), 0)::BIGINT AS chiffre_affaires,
       COUNT(*)::BIGINT AS nombre_commandes
     FROM commandes c
-    WHERE c.etablissement_id = v_etab
+    WHERE c.etablissement_id = v_establishment
       AND c.statut IN ('validee', 'terminee')
       AND COALESCE(c.date_validation, c.date_creation) >= p_debut
       AND COALESCE(c.date_validation, c.date_creation) <= p_fin
@@ -530,10 +602,10 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_etab UUID;
+  v_establishment UUID;
 BEGIN
-  SELECT etablissement_id INTO v_etab FROM public.reporting_scope();
-  IF v_etab IS NULL THEN
+  SELECT etablissement_id INTO v_establishment FROM public.reporting_scope();
+  IF v_establishment IS NULL THEN
     RAISE EXCEPTION 'Aucun établissement associé à votre compte.';
   END IF;
 
@@ -541,7 +613,7 @@ BEGIN
   WITH base AS (
     SELECT e.mode_paiement, SUM(e.montant)::BIGINT AS total, COUNT(*)::BIGINT AS nb
     FROM encaissements e
-    WHERE e.etablissement_id = v_etab
+    WHERE e.etablissement_id = v_establishment
       AND e.date_encaissement >= p_debut
       AND e.date_encaissement <= p_fin
     GROUP BY e.mode_paiement
@@ -579,7 +651,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_etab UUID;
+  v_establishment UUID;
   v_offset INTEGER;
   v_total BIGINT;
   v_rows JSON;
@@ -591,8 +663,8 @@ BEGIN
     RAISE EXCEPTION 'La limite doit être entre 1 et 100';
   END IF;
 
-  SELECT etablissement_id INTO v_etab FROM public.reporting_scope();
-  IF v_etab IS NULL THEN
+  SELECT etablissement_id INTO v_establishment FROM public.reporting_scope();
+  IF v_establishment IS NULL THEN
     RAISE EXCEPTION 'Aucun établissement associé à votre compte.';
   END IF;
 
@@ -602,7 +674,7 @@ BEGIN
   INTO v_total
   FROM commandes c
   LEFT JOIN commande_items ci ON ci.commande_id = c.id
-  WHERE c.etablissement_id = v_etab
+  WHERE c.etablissement_id = v_establishment
     AND c.statut IN ('validee', 'terminee')
     AND (p_date_debut IS NULL OR COALESCE(c.date_validation, c.date_creation) >= p_date_debut)
     AND (p_date_fin IS NULL OR COALESCE(c.date_validation, c.date_creation) <= p_date_fin)
@@ -629,7 +701,7 @@ BEGIN
     FROM commandes c
     LEFT JOIN tables t2 ON t2.id = c.table_id
     LEFT JOIN profiles s ON s.id = c.serveuse_id
-    WHERE c.etablissement_id = v_etab
+    WHERE c.etablissement_id = v_establishment
       AND c.statut IN ('validee', 'terminee')
       AND (p_date_debut IS NULL OR COALESCE(c.date_validation, c.date_creation) >= p_date_debut)
       AND (p_date_fin IS NULL OR COALESCE(c.date_validation, c.date_creation) <= p_date_fin)
