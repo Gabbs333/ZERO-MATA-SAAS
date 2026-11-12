@@ -28,7 +28,10 @@ interface MouvementCaisse {
 interface SoldeCaisse {
   date: string;
   entrees_caisse: number;
+  entrees_totales?: number;
   sorties_caisse: number;
+  sorties_hors_encaissements?: number;
+  remboursements?: number;
   encaissements_ventes: number;
   solde_theorique: number;
 }
@@ -319,8 +322,15 @@ export function CaisseScreen() {
               </div>
               <div>
                 <span className="text-neutral-500">Sorties caisse</span>
-                <p className="font-bold text-semantic-red">−{formatMontant(solde.sorties_caisse)}</p>
+                <p className="font-bold text-semantic-red">−{formatMontant(solde.sorties_hors_encaissements ?? 0)}</p>
               </div>
+              {(solde.remboursements || 0) > 0 && (
+                <div className="col-span-2 md:col-span-3">
+                  <span className="text-neutral-500">Dont remboursements de la période</span>
+                  <p className="font-bold text-semantic-red">−{formatMontant(solde.remboursements || 0)}</p>
+                  <p className="text-[11px] text-neutral-400">Déjà déduits des ventes encaissées ci-dessus (encaissements négatifs).</p>
+                </div>
+              )}
               <div className="col-span-2 md:col-span-3 pt-3 border-t border-neutral-200 dark:border-white/10">
                 <span className="text-neutral-500">Solde théorique</span>
                 <p className={`text-xl font-bold ${solde.solde_theorique >= 0 ? 'text-neutral-900 dark:text-white' : 'text-semantic-red'}`}>

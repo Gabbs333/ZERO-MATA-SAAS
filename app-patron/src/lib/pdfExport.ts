@@ -206,6 +206,7 @@ export async function buildSynthesePdf(s: SynthesePeriode): Promise<ArrayBuffer>
     body: [
       ['Entrées de caisse hors ventes', montant(s.caisse.entrees_hors_ventes), '-'],
       ['Sorties de caisse', montant(s.caisse.sorties), '-'],
+      ['Dont remboursements (déjà déduits des encaissements)', montant((s.caisse as any).remboursements ?? 0), '-'],
       ['Solde théorique de caisse', montant(s.caisse.solde_theorique), '-'],
       ['Clôtures de caisse', montant(s.caisse.ecart_total), String(s.caisse.clotures)],
       ['Retours', montant(s.retours.montant), String(s.retours.nb)],
