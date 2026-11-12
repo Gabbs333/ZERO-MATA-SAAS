@@ -31,6 +31,50 @@ const INITIAL_FORM_DATA: ProductFormData = {
   gestion_stock: true
 };
 
+// ---------------------------------------------------------------------------
+// Tarifs contextuels : formulaire et affichage des conditions
+// ---------------------------------------------------------------------------
+
+const JOURS_LABELS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+
+const emptyTarifForm = () => ({
+  nom_tarif: '',
+  prix_vente: '',
+  jours_semaine: [] as number[],
+  heure_debut: '',
+  heure_fin: '',
+  date_debut: '',
+  date_fin: '',
+  priorite: 0,
+  modele_id: '',
+});
+
+const describeTarifConditions = (t: any): string => {
+  const parts: string[] = [];
+
+  if (t.jours_semaine && t.jours_semaine.length > 0) {
+    parts.push(t.jours_semaine.map((d: number) => JOURS_LABELS[d] ?? d).join(', '));
+  } else {
+    parts.push('Tous les jours');
+  }
+
+  if (t.heure_debut && t.heure_fin) {
+    parts.push(`${String(t.heure_debut).slice(0, 5)} → ${String(t.heure_fin).slice(0, 5)}`);
+  } else {
+    parts.push('Toute la journée');
+  }
+
+  if (t.date_debut || t.date_fin) {
+    parts.push(`Du ${t.date_debut || '…'} au ${t.date_fin || '…'}`);
+  }
+
+  if (Number(t.priorite) !== 0) {
+    parts.push(`Priorité ${t.priorite}`);
+  }
+
+  return parts.join(' • ');
+};
+
 export function ProduitsScreen() {
   const profile = useAuthStore((state) => state.profile);
   const queryClient = useQueryClient();
@@ -64,50 +108,67 @@ export function ProduitsScreen() {
   const [isFetchingTarifs, setIsFetchingTarifs] = useState(false);
   const [produitsAvecTarifs, setProduitsAvecTarifs] = useState<Record<string, number>>({});
 
-  // Formulaire nouveau tarif
-  const [tarifForm, setTarifForm] = useState({
-    nom_tarif: '',
-    prix_vente: '',
-    jours_semaine: [] as number[],
-    heure_debut: '',
-    heure_fin: '',
-    priorite: 0
-  });
+  // Bibliothèque de tarifs réutilisables
+  const [tarifsModeles, setTarifsModeles] = useState<any[]>([]);
+  const [isFetchingModeles, setIsFetchingModeles] = useState(false);
+  const [saveAsModele, setSaveAsModele] = useState(true);
+  const [tarifMessage, setTarifMessage] = useState<string | null>(null);
+  const [applyModele, setApplyModele] = useState<{ modele: any; selected: string[]; search: string } | null>(null);
+  const [isApplyingModele, setIsApplyingModele] = useState(false);
 
-  // Charger les compteurs de tarifs par produit
-  useEffect(() => {
+  // Formulaire nouveau tarif
+  const [tarifForm, setTarifForm] = useState(emptyTarifForm());
+
+  const refreshTarifCounts = async () => {
     if (!profile?.etablissement_id) return;
-    supabase
+    const { data } = await supabase
       .from('tarifs_specifiques')
       .select('produit_id')
       .eq('etablissement_id', profile.etablissement_id)
-      .eq('actif', true)
-      .then(({ data }) => {
-        if (data) {
-          const counts: Record<string, number> = {};
-          data.forEach((t: any) => {
-            counts[t.produit_id] = (counts[t.produit_id] || 0) + 1;
-          });
-          setProduitsAvecTarifs(counts);
-        }
+      .eq('actif', true);
+    if (data) {
+      const counts: Record<string, number> = {};
+      data.forEach((t: any) => {
+        counts[t.produit_id] = (counts[t.produit_id] || 0) + 1;
       });
+      setProduitsAvecTarifs(counts);
+    }
+  };
+
+  // Charger les compteurs de tarifs par produit
+  useEffect(() => {
+    refreshTarifCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.etablissement_id, isTarifsModalOpen]);
+
+  const fetchModeles = async () => {
+    if (!profile?.etablissement_id) return;
+    setIsFetchingModeles(true);
+    const { data, error } = await supabase
+      .from('tarifs_modeles')
+      .select('*')
+      .eq('etablissement_id', profile.etablissement_id)
+      .order('nom', { ascending: true });
+    if (!error && data) setTarifsModeles(data);
+    setIsFetchingModeles(false);
+  };
 
   const handleOpenTarifsModal = async (product: Produit) => {
     setSelectedProductForTarifs(product);
     setIsTarifsModalOpen(true);
-    await fetchTarifs(product.id);
+    setTarifMessage(null);
+    setTarifForm(emptyTarifForm());
+    setSaveAsModele(true);
+    await Promise.all([fetchTarifs(product.id), fetchModeles()]);
   };
 
   const fetchTarifs = async (produitId: string) => {
     setIsFetchingTarifs(true);
-    console.log('Fetching tarifs for product:', produitId);
     const { data, error } = await supabase
       .from('tarifs_specifiques')
       .select('*')
       .eq('produit_id', produitId)
       .order('priorite', { ascending: false });
-    console.log('Fetch tarifs result:', { data, error });
     if (!error && data) {
       setTarifsList(data);
     } else {
@@ -116,52 +177,106 @@ export function ProduitsScreen() {
     setIsFetchingTarifs(false);
   };
 
+  /** Pré-remplit le formulaire depuis un modèle de la bibliothèque. */
+  const handleUseModele = (modele: any) => {
+    setTarifForm({
+      nom_tarif: modele.nom,
+      prix_vente: String(modele.prix_vente),
+      jours_semaine: modele.jours_semaine || [],
+      heure_debut: modele.heure_debut ? String(modele.heure_debut).slice(0, 5) : '',
+      heure_fin: modele.heure_fin ? String(modele.heure_fin).slice(0, 5) : '',
+      date_debut: modele.date_debut || '',
+      date_fin: modele.date_fin || '',
+      priorite: modele.priorite ?? 0,
+      modele_id: modele.id,
+    });
+    setSaveAsModele(false);
+    setTarifMessage(`Modèle « ${modele.nom} » chargé. Ajustez le prix si besoin, puis enregistrez.`);
+  };
+
   const handleAddTarif = async (e?: any) => {
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
     }
-    console.log('handleAddTarif called successfully!', { tarifForm, selectedProductForTarifs });
-    if (!selectedProductForTarifs || !profile?.etablissement_id) {
-      console.warn('Missing product or establishment ID');
+    if (!selectedProductForTarifs || !profile?.etablissement_id) return;
+
+    const nom = tarifForm.nom_tarif.trim();
+    const prix = Number(tarifForm.prix_vente);
+
+    if (!nom) {
+      setTarifMessage('Le nom du tarif est obligatoire.');
+      return;
+    }
+    if (!Number.isFinite(prix) || prix < 0) {
+      setTarifMessage('Le prix doit être un nombre positif.');
       return;
     }
 
-    try {
-      console.log('Attempting to insert tarif:', {
-        etablissement_id: profile.etablissement_id,
-        produit_id: selectedProductForTarifs.id,
-        nom_tarif: tarifForm.nom_tarif,
-        prix_vente: Number(tarifForm.prix_vente),
-      });
+    setTarifMessage(null);
 
-      const { data, error } = await supabase.from('tarifs_specifiques').insert({
+    try {
+      let modeleId: string | null = tarifForm.modele_id || null;
+
+      // Enregistrement (ou mise à jour) du modèle réutilisable
+      if (saveAsModele) {
+        const { data: modele, error: modeleError } = await supabase
+          .from('tarifs_modeles')
+          .upsert({
+            etablissement_id: profile.etablissement_id,
+            nom,
+            prix_vente: prix,
+            jours_semaine: tarifForm.jours_semaine.length > 0 ? tarifForm.jours_semaine : null,
+            heure_debut: tarifForm.heure_debut || null,
+            heure_fin: tarifForm.heure_fin || null,
+            date_debut: tarifForm.date_debut || null,
+            date_fin: tarifForm.date_fin || null,
+            priorite: Number(tarifForm.priorite) || 0,
+            actif: true,
+            date_mise_a_jour: new Date().toISOString(),
+          }, { onConflict: 'etablissement_id,nom' })
+          .select()
+          .single();
+
+        if (modeleError) throw modeleError;
+        modeleId = modele.id;
+      }
+
+      const payload = {
         etablissement_id: profile.etablissement_id,
         produit_id: selectedProductForTarifs.id,
-        nom_tarif: tarifForm.nom_tarif,
-        prix_vente: Number(tarifForm.prix_vente),
+        modele_id: modeleId,
+        nom_tarif: nom,
+        prix_vente: prix,
         jours_semaine: tarifForm.jours_semaine.length > 0 ? tarifForm.jours_semaine : null,
         heure_debut: tarifForm.heure_debut || null,
         heure_fin: tarifForm.heure_fin || null,
-        priorite: Number(tarifForm.priorite),
-        actif: true
-      }).select();
+        date_debut: tarifForm.date_debut || null,
+        date_fin: tarifForm.date_fin || null,
+        priorite: Number(tarifForm.priorite) || 0,
+        actif: true,
+      };
 
-      console.log('Insert tarif response:', { data, error });
+      const { error } = modeleId
+        ? await supabase
+            .from('tarifs_specifiques')
+            .upsert(payload, { onConflict: 'produit_id,modele_id' })
+        : await supabase.from('tarifs_specifiques').insert(payload);
 
       if (error) throw error;
 
-      // Reset form & refresh list
-      setTarifForm({ nom_tarif: '', prix_vente: '', jours_semaine: [], heure_debut: '', heure_fin: '', priorite: 0 });
-      await fetchTarifs(selectedProductForTarifs.id);
-      
-      // Mettre à jour le compteur local
-      setProduitsAvecTarifs(prev => ({
-        ...prev,
-        [selectedProductForTarifs.id]: (prev[selectedProductForTarifs.id] || 0) + 1
-      }));
+      setTarifForm(emptyTarifForm());
+      setSaveAsModele(true);
+      setTarifMessage(
+        modeleId
+          ? 'Règle enregistrée. Elle est disponible dans la bibliothèque pour les autres produits.'
+          : 'Règle enregistrée sur ce produit.'
+      );
+
+      await Promise.all([fetchTarifs(selectedProductForTarifs.id), fetchModeles()]);
+      await refreshTarifCounts();
     } catch (err: any) {
-      console.error('Error adding tarif exception:', err);
-      alert('Erreur lors de l\'ajout du tarif : ' + err.message);
+      console.error('Error saving tarif:', err);
+      setTarifMessage('Erreur : ' + (err?.message || 'enregistrement impossible'));
     }
   };
 
@@ -170,12 +285,44 @@ export function ProduitsScreen() {
     const { error } = await supabase.from('tarifs_specifiques').delete().eq('id', tarifId);
     if (!error && selectedProductForTarifs) {
       await fetchTarifs(selectedProductForTarifs.id);
-      setProduitsAvecTarifs(prev => {
-        const count = (prev[selectedProductForTarifs.id] || 1) - 1;
-        return { ...prev, [selectedProductForTarifs.id]: count > 0 ? count : 0 };
-      });
+      await refreshTarifCounts();
     }
   };
+
+  const handleDeleteModele = async (modele: any) => {
+    if (!confirm(`Supprimer le modèle « ${modele.nom} » de la bibliothèque ?\nLes règles déjà appliquées aux produits sont conservées.`)) return;
+    const { error } = await supabase.from('tarifs_modeles').delete().eq('id', modele.id);
+    if (error) {
+      setTarifMessage('Erreur : ' + error.message);
+      return;
+    }
+    await fetchModeles();
+  };
+
+  const handleApplyModele = async () => {
+    if (!applyModele) return;
+    setIsApplyingModele(true);
+    setTarifMessage(null);
+    try {
+      const { data, error } = await supabase.rpc('appliquer_modele_tarif', {
+        p_modele_id: applyModele.modele.id,
+        p_produit_ids: applyModele.selected,
+      });
+      if (error) throw error;
+      const nb = (data as any)?.produits ?? applyModele.selected.length;
+      setApplyModele(null);
+      setTarifMessage(`« ${applyModele.modele.nom} » appliqué à ${nb} produit(s).`);
+      if (selectedProductForTarifs) await fetchTarifs(selectedProductForTarifs.id);
+      await refreshTarifCounts();
+    } catch (err: any) {
+      console.error('Error applying modele:', err);
+      setTarifMessage('Erreur : ' + (err?.message || 'application impossible'));
+    } finally {
+      setIsApplyingModele(false);
+    }
+  };
+
+  // Produits proposés dans le sélecteur « Appliquer à… »
   const { data: produits, isPending: isLoading, refetch } = useSupabaseQuery<Produit[]>(
     ['produits', profile?.etablissement_id],
     async () => {
@@ -189,6 +336,15 @@ export function ProduitsScreen() {
     },
     { enabled: !!profile?.etablissement_id }
   );
+
+  const filteredApplyProduits = ((produits || []) as Produit[]).filter((p) => {
+    if (!applyModele) return false;
+    const q = applyModele.search.trim().toLowerCase();
+    return !q || p.nom.toLowerCase().includes(q);
+  });
+  const tousApplySelectionnes =
+    filteredApplyProduits.length > 0 &&
+    filteredApplyProduits.every((p) => applyModele?.selected.includes(p.id));
 
   // Fetch établissement's global cout_moyen_pourcentage
   useEffect(() => {
@@ -831,6 +987,78 @@ export function ProduitsScreen() {
                       </div>
 
                       <div className="p-4 md:p-6 overflow-y-auto space-y-6 flex-1">
+                        {tarifMessage && (
+                          <p className="text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-3 py-2 rounded-lg">
+                            {tarifMessage}
+                          </p>
+                        )}
+
+                        {/* Bibliothèque de tarifs réutilisables */}
+                        <div className="bg-indigo-50/70 dark:bg-indigo-500/5 p-4 rounded-xl border border-indigo-200/70 dark:border-indigo-500/20">
+                          <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-sm font-bold text-primary dark:text-white">📚 Bibliothèque de tarifs</h3>
+                            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-full">
+                              {tarifsModeles.length} modèle{tarifsModeles.length > 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-neutral-500 mb-3">
+                            Définis une fois, réutilisables partout : « Utiliser » pré-remplit le formulaire,
+                            « Appliquer à… » duplique le tarif sur plusieurs produits.
+                          </p>
+
+                          {isFetchingModeles ? (
+                            <p className="text-xs text-neutral-400">Chargement…</p>
+                          ) : tarifsModeles.length === 0 ? (
+                            <p className="text-xs text-neutral-400 italic">
+                              Aucun modèle. Enregistrez une règle ci-dessous en laissant cochée
+                              « Ajouter à la bibliothèque ».
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              {tarifsModeles.map((m) => (
+                                <div
+                                  key={m.id}
+                                  className="p-3 bg-white dark:bg-dark-card/40 rounded-xl border border-neutral-200 dark:border-white/5 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-bold text-sm text-primary dark:text-white truncate">{m.nom}</span>
+                                      <span className="px-2 py-0.5 bg-green-500/10 text-green-600 rounded text-xs font-bold">
+                                        {formatMontant(m.prix_vente)}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-neutral-500 mt-0.5">🕒 {describeTarifConditions(m)}</p>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUseModele(m)}
+                                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-primary/10 dark:bg-dark-accent/20 text-primary dark:text-white hover:bg-primary/20 transition-colors"
+                                    >
+                                      Utiliser
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setApplyModele({ modele: m, selected: [], search: '' })}
+                                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+                                    >
+                                      Appliquer à…
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteModele(m)}
+                                      className="text-neutral-400 hover:text-red-500 p-1 transition-colors"
+                                      title="Supprimer le modèle (les règles déjà appliquées restent)"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
                         {/* Formulaire ajout */}
                         <form onSubmit={handleAddTarif} className="bg-neutral-50 dark:bg-dark-card/40 p-4 rounded-xl border border-neutral-200 dark:border-white/5 space-y-4">
                           <h3 className="text-sm font-bold text-primary dark:text-white">➕ Ajouter une règle tarifaire (Happy Hour, Nuit, Week-end...)</h3>
@@ -924,6 +1152,42 @@ export function ProduitsScreen() {
                             </div>
                           </div>
 
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-neutral-500 mb-1">Valable du (optionnel — saison)</label>
+                              <input
+                                type="date"
+                                value={tarifForm.date_debut}
+                                onChange={e => setTarifForm({ ...tarifForm, date_debut: e.target.value })}
+                                className="w-full px-3 py-2 bg-white dark:bg-dark-card border rounded-lg text-sm text-primary dark:text-white outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-neutral-500 mb-1">Valable jusqu'au</label>
+                              <input
+                                type="date"
+                                value={tarifForm.date_fin}
+                                onChange={e => setTarifForm({ ...tarifForm, date_fin: e.target.value })}
+                                className="w-full px-3 py-2 bg-white dark:bg-dark-card border rounded-lg text-sm text-primary dark:text-white outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <label className="flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-300 bg-white dark:bg-dark-card/40 border border-neutral-200 dark:border-white/5 rounded-lg px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={saveAsModele}
+                              onChange={e => setSaveAsModele(e.target.checked)}
+                              className="mt-0.5 accent-primary"
+                            />
+                            <span>
+                              <span className="font-bold text-primary dark:text-white">Ajouter à la bibliothèque</span>
+                              <span className="block text-[11px] text-neutral-500">
+                                Rend ce tarif réutilisable sur d'autres produits. Un modèle portant le même nom est mis à jour.
+                              </span>
+                            </span>
+                          </label>
+
                           <button
                             type="button"
                             onClick={handleAddTarif}
@@ -948,6 +1212,9 @@ export function ProduitsScreen() {
                                     <div className="flex items-center gap-2">
                                       <span className="font-bold text-sm text-primary dark:text-white">{tarif.nom_tarif}</span>
                                       <span className="px-2 py-0.5 bg-green-500/10 text-green-600 rounded text-xs font-bold">{formatMontant(tarif.prix_vente)}</span>
+                                      {tarif.modele_id && (
+                                        <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 rounded text-[10px] font-bold" title="Règle issue de la bibliothèque">📚</span>
+                                      )}
                                       <span className="text-xs text-neutral-400">Priorité : {tarif.priorite}</span>
                                     </div>
                                     <p className="text-xs text-neutral-500 mt-1">
@@ -967,6 +1234,126 @@ export function ProduitsScreen() {
                             </div>
                           )}
                         </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sélecteur « Appliquer un modèle à plusieurs produits » */}
+                {applyModele && (
+                  <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
+                    <div className="bg-white dark:bg-dark-card/95 rounded-2xl w-full max-w-lg shadow-2xl border border-neutral-200 dark:border-white/5 overflow-hidden flex flex-col max-h-[85vh]">
+                      <div className="p-4 border-b border-neutral-100 dark:border-white/5 flex justify-between items-start gap-3">
+                        <div className="min-w-0">
+                          <h2 className="text-lg font-bold text-primary dark:text-white font-display truncate">
+                            Appliquer « {applyModele.modele.nom} »
+                          </h2>
+                          <p className="text-xs text-neutral-500">
+                            {formatMontant(applyModele.modele.prix_vente)} • {describeTarifConditions(applyModele.modele)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setApplyModele(null)}
+                          className="text-neutral-400 hover:text-primary dark:hover:text-white transition-colors"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <div className="p-4 space-y-3 flex flex-col min-h-0">
+                        <input
+                          type="text"
+                          value={applyModele.search}
+                          onChange={(e) => setApplyModele((prev) => (prev ? { ...prev, search: e.target.value } : prev))}
+                          placeholder="Rechercher un produit…"
+                          className="w-full px-3 py-2 bg-neutral-100 dark:bg-dark-card/40 rounded-lg text-sm text-primary dark:text-white outline-none"
+                        />
+
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-neutral-500">{applyModele.selected.length} sélectionné(s)</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setApplyModele((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      selected: tousApplySelectionnes
+                                        ? []
+                                        : filteredApplyProduits.map((p) => p.id),
+                                    }
+                                  : prev
+                              )
+                            }
+                            className="font-bold text-primary dark:text-dark-accent hover:underline"
+                          >
+                            {tousApplySelectionnes ? 'Tout désélectionner' : 'Tout sélectionner'}
+                          </button>
+                        </div>
+
+                        <div className="overflow-y-auto divide-y divide-neutral-100 dark:divide-white/5 rounded-xl border border-neutral-200 dark:border-white/5 min-h-0">
+                          {filteredApplyProduits.length === 0 ? (
+                            <p className="p-3 text-xs text-neutral-400 italic">Aucun produit ne correspond.</p>
+                          ) : (
+                            filteredApplyProduits.map((p) => {
+                              const checked = applyModele.selected.includes(p.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setApplyModele((prev) =>
+                                      prev
+                                        ? {
+                                            ...prev,
+                                            selected: checked
+                                              ? prev.selected.filter((id) => id !== p.id)
+                                              : [...prev.selected, p.id],
+                                          }
+                                        : prev
+                                    )
+                                  }
+                                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
+                                >
+                                  <span className="text-sm text-primary dark:text-white truncate">
+                                    {p.nom}
+                                    <span className="ml-2 text-[10px] text-neutral-400 uppercase">{p.categorie}</span>
+                                  </span>
+                                  <span
+                                    className={twMerge(
+                                      'w-4 h-4 shrink-0 rounded border-2 flex items-center justify-center text-[10px] font-black',
+                                      checked
+                                        ? 'bg-primary dark:bg-dark-accent border-primary dark:border-dark-accent text-white'
+                                        : 'border-neutral-300 dark:border-white/20 text-transparent'
+                                    )}
+                                  >
+                                    ✓
+                                  </span>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-4 border-t border-neutral-100 dark:border-white/5 flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setApplyModele(null)}
+                          className="flex-1 px-4 py-2.5 rounded-xl font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-dark-card/40 transition-colors"
+                        >
+                          Annuler
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isApplyingModele || applyModele.selected.length === 0}
+                          onClick={handleApplyModele}
+                          className="flex-1 px-4 py-2.5 bg-primary dark:bg-dark-accent text-white rounded-xl font-bold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {isApplyingModele
+                            ? 'Application…'
+                            : `Appliquer à ${applyModele.selected.length} produit(s)`}
+                        </button>
                       </div>
                     </div>
                   </div>
