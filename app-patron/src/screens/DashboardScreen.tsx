@@ -473,33 +473,56 @@ export function DashboardScreen() {
   }, [creditFacturesData]);
   // const paymentLoading = encLoading;
 
-  // Fetch current debt for the period
-  const { data: totalDebt, isLoading: debtLoading } = useSupabaseQuery(
-    ['total_debt', dateRange.start.toISOString(), dateRange.end.toISOString()],
+  // Factures de la période : base de réconciliation (CA facturé = encaissé + impayé)
+  const { data: facturesPeriodeData, isLoading: facturesLoading } = useSupabaseQuery(
+    ['dashboard_factures_periode', dateRange.start.toISOString(), dateRange.end.toISOString(), profile?.etablissement_id],
     async () => {
-      return supabase
+      if (!profile?.etablissement_id) return { data: [], error: null };
+      const { data, error } = await supabase
         .from('factures')
-        .select('montant_restant')
+        .select('id, montant_total, montant_paye, montant_restant, credit_sur, statut')
+        .eq('etablissement_id', profile.etablissement_id)
         .gte('date_generation', dateRange.start.toISOString())
         .lte('date_generation', dateRange.end.toISOString())
-        .gt('montant_restant', 0)
-        .then(({ data, error }) => {
-          const total = data?.reduce((acc, curr) => acc + curr.montant_restant, 0) || 0;
-          return { data: total, error };
-        });
-    }
+        .limit(5000);
+      return { data: data || [], error };
+    },
+    { enabled: !!profile?.etablissement_id }
   );
 
-  // Répartition du CA : encaissé / ventes à crédit / factures impayées
-  const caRepartition = useMemo(() => {
-    const ca = kpis?.chiffre_affaires || 0;
-    const pct = (v: number) => (ca > 0 ? Math.round((v / ca) * 100) : 0);
+  // Réconciliation : CA facturé = encaissé + restant dû
+  const reconciliation = useMemo(() => {
+    const facts = (facturesPeriodeData || []) as any[];
+    const somme = (list: any[], key: string) =>
+      list.reduce((sum, f) => sum + (Number(f[key]) || 0), 0);
+
+    const credit = facts.filter((f) => f.credit_sur === true);
+    const horsCredit = facts.filter((f) => f.credit_sur !== true);
+
     return {
-      encaisse: { montant: kpis?.encaissements || 0, pct: pct(kpis?.encaissements || 0) },
-      credit: { montant: creditSales.montant_total, pct: pct(creditSales.montant_total) },
-      impaye: { montant: totalDebt || 0, pct: pct(totalDebt || 0) },
+      nb_factures: facts.length,
+      ca_facture: somme(facts, 'montant_total'),
+      paye: somme(facts, 'montant_paye'),
+      impaye: somme(facts, 'montant_restant'),
+      // Ventes à crédit : ce qui reste dû sur les factures marquées crédit
+      credit_restant: somme(credit, 'montant_restant'),
+      // Factures impayées : restant dû hors ventes à crédit
+      impaye_hors_credit: somme(horsCredit, 'montant_restant'),
     };
-  }, [kpis, creditSales, totalDebt]);
+  }, [facturesPeriodeData]);
+
+  // Répartition du CA facturé : encaissé / ventes à crédit / factures impayées
+  // (la somme des trois est égale au CA facturé de la période)
+  const caRepartition = useMemo(() => {
+    const base = reconciliation.ca_facture || 0;
+    const pct = (v: number) => (base > 0 ? Math.round((v / base) * 100) : 0);
+    return {
+      base,
+      encaisse: { montant: reconciliation.paye, pct: pct(reconciliation.paye) },
+      credit: { montant: reconciliation.credit_restant, pct: pct(reconciliation.credit_restant) },
+      impaye: { montant: reconciliation.impaye_hors_credit, pct: pct(reconciliation.impaye_hors_credit) },
+    };
+  }, [reconciliation]);
 
   // Fetch pending validations for the period
   const { data: pendingCommandes, isLoading: pendingLoading } = useSupabaseQuery(
@@ -822,15 +845,15 @@ export function DashboardScreen() {
                 <Wallet className="w-4 h-4" />
                 <span className="text-[10px] font-bold uppercase tracking-widest">Réel Encaissé</span>
               </div>
-              {kpisLoading && <div className="size-3 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>}
+              {(kpisLoading || facturesLoading) && <div className="size-3 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>}
             </div>
             <p className="text-white text-xl font-black tracking-tight z-10">
-              {formatMontant(kpis?.encaissements || 0)}
+              {formatMontant(reconciliation.paye)}
             </p>
             <div className="flex items-center justify-between mt-1 z-10">
-              <span className="text-[10px] text-white/50 font-bold uppercase tracking-wider">Liquidités</span>
+              <span className="text-[10px] text-white/50 font-bold uppercase tracking-wider">Factures de la période</span>
               <span className="text-[10px] font-black text-white bg-white/20 px-2 py-0.5 rounded-full">
-                {kpis?.chiffre_affaires ? Math.round((kpis.encaissements / kpis.chiffre_affaires) * 100) : 0}%
+                {reconciliation.ca_facture > 0 ? Math.round((reconciliation.paye / reconciliation.ca_facture) * 100) : 0}%
               </span>
             </div>
           </div>
@@ -916,7 +939,7 @@ export function DashboardScreen() {
             <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">
               Suivi des règlements (part du CA)
             </span>
-            {(kpisLoading || debtLoading) && (
+            {(kpisLoading || facturesLoading) && (
               <div className="size-3 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
             )}
           </div>
@@ -967,13 +990,12 @@ export function DashboardScreen() {
           <div className="flex flex-col">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest">Factures impayées (créances de la période)</span>
-              {debtLoading && <div className="size-3 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>}
+              {facturesLoading && <div className="size-3 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>}
             </div>
             <div className="flex items-baseline gap-1">
               <span className="text-2xl font-black text-primary dark:text-white">
-                {totalDebt?.toLocaleString('fr-FR') || '0'}
+                {formatMontant(reconciliation.impaye)}
               </span>
-              <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-bold uppercase">XAF</span>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
