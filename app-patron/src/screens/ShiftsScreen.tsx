@@ -20,7 +20,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { formatMontant, formatModePaiement } from '../utils/format';
 import { EXPORT_DEFINITIONS } from '../lib/exporters';
 import type { ExportDefinition } from '../lib/exporters';
-import { downloadPassationPdf } from '../lib/pdfExport';
+import { downloadPassationPdf, downloadPassationsJourPdf } from '../lib/pdfExport';
+import type { StockResume } from '../lib/pdfExport';
 import { ExporterButton } from '../components/ExporterButton';
 
 // ---------------------------------------------------------------------------
@@ -91,6 +92,45 @@ interface ShiftDefinition {
   actif: boolean;
 }
 
+interface StockProduit {
+  produit_id: string;
+  produit_nom: string;
+  categorie: string | null;
+  departement: 'bar' | 'cuisine';
+  cout_unitaire: number;
+  qte_ouverture: number;
+  valeur_ouverture: number;
+  qte_entrees: number;
+  valeur_entrees: number;
+  qte_vendues: number;
+  valeur_vendues: number;
+  qte_sorties_autres: number;
+  valeur_sorties_autres: number;
+  qte_cloture: number;
+  valeur_cloture: number;
+  qte_comptee_jour: number;
+  ecart_qte_jour: number;
+  ecart_valeur_jour: number;
+}
+
+interface StockSession {
+  session_id: string;
+  business_date: string;
+  statut: 'ouverte' | 'fermee';
+  shift: { nom: string; heure_debut: string; heure_fin: string };
+  fenetre: { debut: string; fin: string };
+  totaux: StockResume & { produits_suivis: number; produits_mouvementes: number };
+  comptage: {
+    disponible: boolean;
+    date_cloture: string;
+    produits_comptes: number;
+    ecart_qte: number;
+    ecart_valeur: number;
+    portee: 'journee';
+  };
+  produits: StockProduit[];
+}
+
 interface ShiftForm {
   id: string | null;
   nom: string;
@@ -124,6 +164,10 @@ const SHIFT_EXPORT: ExportDefinition | undefined = EXPORT_DEFINITIONS.find(
   (d) => d.type === 'journal_sessions_shift'
 );
 
+const EXPORTS_SHIFT: ExportDefinition[] = EXPORT_DEFINITIONS.filter((d) =>
+  ['journal_sessions_shift', 'rapport_stock_shift', 'rapport_stock_shift_produit'].includes(d.type)
+);
+
 const JOUR_LABEL = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number);
   return format(new Date(y, m - 1, d), 'EEEE dd MMMM yyyy');
@@ -145,6 +189,10 @@ export function ShiftsScreen() {
   const [filtreStatut, setFiltreStatut] = useState<string>('tous');
 
   const [detail, setDetail] = useState<SessionShift | null>(null);
+  const [detailTab, setDetailTab] = useState<'caisse' | 'stock'>('caisse');
+  const [stockDetail, setStockDetail] = useState<StockSession | null>(null);
+  const [stockLoading, setStockLoading] = useState(false);
+  const [stockError, setStockError] = useState<string | null>(null);
   const [pdfBusy, setPdfBusy] = useState<string | null>(null);
   const [pdfMessage, setPdfMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
@@ -332,26 +380,106 @@ export function ShiftsScreen() {
     await loadShifts();
   };
 
-  // --- Rapport de passation (PDF natif)
+  // --- Rapprochement de stock d'une session
+  const chargerStock = async (sessionId: string): Promise<StockSession> => {
+    const { data, error: err } = await supabase.rpc('get_rapprochement_stock_session', {
+      p_session_id: sessionId,
+    });
+    if (err) throw err;
+    return data as unknown as StockSession;
+  };
+
+  // Chargement paresseux du stock quand l'onglet est ouvert
+  useEffect(() => {
+    if (!detail || detailTab !== 'stock') return;
+    if (stockDetail?.session_id === detail.id) return;
+
+    let cancelled = false;
+    setStockLoading(true);
+    setStockError(null);
+
+    chargerStock(detail.id)
+      .then((d) => {
+        if (!cancelled) setStockDetail(d);
+      })
+      .catch((err: any) => {
+        console.error('Stock shift error:', err);
+        if (!cancelled) setStockError(err?.message || 'Rapprochement de stock indisponible.');
+      })
+      .finally(() => {
+        if (!cancelled) setStockLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.id, detailTab]);
+
+  const metaPassation = () => ({
+    etablissement_nom: payload?.etablissement?.nom || '',
+    devise: payload?.etablissement?.devise || 'XAF',
+    fuseau_horaire: payload?.etablissement?.fuseau_horaire,
+    edite_par: [profile?.prenom, profile?.nom].filter(Boolean).join(' ') || undefined,
+  });
+
+  // --- Rapport de passation (PDF natif), enrichi du rapprochement stock
   const telechargerPassation = async (s: SessionShift) => {
     setPdfBusy(s.id);
     setPdfMessage(null);
     try {
-      await downloadPassationPdf(s, {
-        etablissement_nom: payload?.etablissement?.nom || '',
-        devise: payload?.etablissement?.devise || 'XAF',
-        fuseau_horaire: payload?.etablissement?.fuseau_horaire,
-        edite_par: [profile?.prenom, profile?.nom].filter(Boolean).join(' ') || undefined,
-      });
+      let stock: StockResume | undefined;
+      try {
+        stock = (await chargerStock(s.id)).totaux;
+      } catch (e) {
+        // Le PDF reste généré même si le stock est indisponible.
+        console.warn('Stock indisponible pour la passation:', e);
+      }
+
+      await downloadPassationPdf(s, metaPassation(), stock);
       setPdfMessage({
         type: 'ok',
-        text: `Rapport de passation ${s.shift_nom} du ${s.business_date} telecharge.`,
+        text: `Rapport de passation ${s.shift_nom} du ${s.business_date} téléchargé.`,
       });
     } catch (err: any) {
       console.error('Passation PDF error:', err);
       setPdfMessage({
         type: 'error',
-        text: err?.message || 'Impossible de generer le rapport de passation.',
+        text: err?.message || 'Impossible de générer le rapport de passation.',
+      });
+    } finally {
+      setPdfBusy(null);
+    }
+  };
+
+  // --- PDF groupé : toutes les sessions d'une journée d'exploitation
+  const telechargerPassationsJour = async (jour: string, list: SessionShift[]) => {
+    const cle = `jour-${jour}`;
+    setPdfBusy(cle);
+    setPdfMessage(null);
+    try {
+      const items = await Promise.all(
+        list.map(async (s) => {
+          let stock: StockResume | undefined;
+          try {
+            stock = (await chargerStock(s.id)).totaux;
+          } catch (e) {
+            console.warn('Stock indisponible pour', s.shift_nom, e);
+          }
+          return { session: s, stock };
+        })
+      );
+
+      await downloadPassationsJourPdf(items, metaPassation());
+      setPdfMessage({
+        type: 'ok',
+        text: `Passations du ${jour} téléchargées (${items.length} session(s)).`,
+      });
+    } catch (err: any) {
+      console.error('Passations jour PDF error:', err);
+      setPdfMessage({
+        type: 'error',
+        text: err?.message || 'Impossible de générer les passations de la journée.',
       });
     } finally {
       setPdfBusy(null);
@@ -378,7 +506,7 @@ export function ShiftsScreen() {
           <div className="flex items-center gap-2 self-start md:self-auto">
             {SHIFT_EXPORT && payload && (
               <ExporterButton
-                definitions={[SHIFT_EXPORT]}
+                definitions={EXPORTS_SHIFT}
                 start={new Date(`${dateDebut}T00:00:00`)}
                 end={new Date(`${dateFin}T23:59:59`)}
                 filtres={{
@@ -550,9 +678,24 @@ export function ShiftsScreen() {
                         {JOUR_LABEL(jour)}
                       </h2>
                     </div>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      {formatMontant(ventes)} de CA · {formatMontant(encaisse)} encaissés
-                    </p>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                        {formatMontant(ventes)} de CA · {formatMontant(encaisse)} encaissés
+                      </p>
+                      <button
+                        onClick={() => telechargerPassationsJour(jour, list)}
+                        disabled={pdfBusy === `jour-${jour}`}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-neutral-300 border border-neutral-200/50 dark:border-white/5 hover:text-primary dark:hover:text-white transition-colors disabled:opacity-50"
+                        title="Récapitulatif PDF de toutes les sessions de cette journée"
+                      >
+                        {pdfBusy === `jour-${jour}` ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Printer className="w-3 h-3" />
+                        )}
+                        Passations du jour
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2">
@@ -560,7 +703,11 @@ export function ShiftsScreen() {
                       <SessionCard
                         key={s.id}
                         session={s}
-                        onDetail={() => setDetail(s)}
+                        onDetail={() => {
+                          setDetail(s);
+                          setDetailTab('caisse');
+                          setStockDetail(null);
+                        }}
                         onExportPdf={() => telechargerPassation(s)}
                         exportBusy={pdfBusy === s.id}
                       />
@@ -852,48 +999,150 @@ export function ShiftsScreen() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              <Metric label="CA total" value={formatMontant(detail.ventes)} />
-              <Metric label="Commandes" value={String(detail.nombre_commandes)} />
-              <Metric label="CA bar" value={formatMontant(detail.ventes_bar)} />
-              <Metric label="CA cuisine" value={formatMontant(detail.ventes_cuisine)} />
-              <Metric label="Encaissements" value={formatMontant(detail.encaissements)} />
-              <Metric label="Impayés" value={formatMontant(detail.montant_impayes)} tone={detail.montant_impayes > 0 ? 'warn' : 'neutral'} />
-            </div>
-
-            <h4 className="mt-4 mb-2 text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-              Encaissements par mode
-            </h4>
-            <div className="space-y-1">
-              {Object.keys(detail.encaissements_par_mode || {}).length === 0 && (
-                <p className="text-sm text-neutral-500">Aucun encaissement.</p>
-              )}
-              {Object.entries(detail.encaissements_par_mode || {}).map(([mode, montant]) => (
-                <div key={mode} className="flex items-center justify-between text-sm">
-                  <span className="text-neutral-600 dark:text-neutral-300">{formatModePaiement(mode)}</span>
-                  <span className="font-bold text-primary dark:text-white">{formatMontant(Number(montant))}</span>
-                </div>
+            {/* Onglets de la modale */}
+            <div className="flex gap-1 mt-3 p-1 rounded-xl bg-neutral-100 dark:bg-white/5 w-fit">
+              {[
+                { key: 'caisse' as const, label: 'Caisse' },
+                { key: 'stock' as const, label: 'Stock' },
+              ].map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setDetailTab(t.key)}
+                  className={twMerge(
+                    'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors',
+                    detailTab === t.key
+                      ? 'bg-white dark:bg-dark-card text-primary dark:text-white shadow-sm'
+                      : 'text-neutral-500 dark:text-neutral-400 hover:text-primary dark:hover:text-white'
+                  )}
+                >
+                  {t.label}
+                </button>
               ))}
             </div>
 
-            <h4 className="mt-4 mb-2 text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-              Caisse
-            </h4>
-            <div className="space-y-1 text-sm">
-              <Line label="Fond initial" value={formatMontant(detail.fond_initial)} />
-              <Line label="Entrées hors ventes" value={formatMontant(detail.entrees_hors_ventes)} />
-              <Line label="Sorties hors ventes" value={`− ${formatMontant(detail.sorties_hors_ventes)}`} />
-              <Line label="Solde théorique" value={formatMontant(detail.solde_theorique)} strong />
-              <Line
-                label="Montant compté"
-                value={detail.montant_compte === null ? '—' : formatMontant(detail.montant_compte)}
-              />
-              <Line
-                label="Écart"
-                value={detail.ecart === null ? 'Session non clôturée' : formatMontant(detail.ecart)}
-                tone={detail.ecart ? 'warn' : 'neutral'}
-              />
-            </div>
+            {detailTab === 'caisse' && (
+              <>
+                <div className="grid grid-cols-2 gap-2 mt-4">
+                  <Metric label="CA total" value={formatMontant(detail.ventes)} />
+                  <Metric label="Commandes" value={String(detail.nombre_commandes)} />
+                  <Metric label="CA bar" value={formatMontant(detail.ventes_bar)} />
+                  <Metric label="CA cuisine" value={formatMontant(detail.ventes_cuisine)} />
+                  <Metric label="Encaissements" value={formatMontant(detail.encaissements)} />
+                  <Metric label="Impayés" value={formatMontant(detail.montant_impayes)} tone={detail.montant_impayes > 0 ? 'warn' : 'neutral'} />
+                </div>
+
+                <h4 className="mt-4 mb-2 text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                  Encaissements par mode
+                </h4>
+                <div className="space-y-1">
+                  {Object.keys(detail.encaissements_par_mode || {}).length === 0 && (
+                    <p className="text-sm text-neutral-500">Aucun encaissement.</p>
+                  )}
+                  {Object.entries(detail.encaissements_par_mode || {}).map(([mode, montant]) => (
+                    <div key={mode} className="flex items-center justify-between text-sm">
+                      <span className="text-neutral-600 dark:text-neutral-300">{formatModePaiement(mode)}</span>
+                      <span className="font-bold text-primary dark:text-white">{formatMontant(Number(montant))}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <h4 className="mt-4 mb-2 text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                  Caisse
+                </h4>
+                <div className="space-y-1 text-sm">
+                  <Line label="Fond initial" value={formatMontant(detail.fond_initial)} />
+                  <Line label="Entrées hors ventes" value={formatMontant(detail.entrees_hors_ventes)} />
+                  <Line label="Sorties hors ventes" value={`− ${formatMontant(detail.sorties_hors_ventes)}`} />
+                  <Line label="Solde théorique" value={formatMontant(detail.solde_theorique)} strong />
+                  <Line
+                    label="Montant compté"
+                    value={detail.montant_compte === null ? '—' : formatMontant(detail.montant_compte)}
+                  />
+                  <Line
+                    label="Écart"
+                    value={detail.ecart === null ? 'Session non clôturée' : formatMontant(detail.ecart)}
+                    tone={detail.ecart ? 'warn' : 'neutral'}
+                  />
+                </div>
+              </>
+            )}
+
+            {detailTab === 'stock' && (
+              <>
+                {stockLoading && (
+                  <div className="flex items-center gap-2 mt-4 text-sm text-neutral-500">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Rapprochement de stock…
+                  </div>
+                )}
+
+                {stockError && !stockLoading && (
+                  <div className="mt-4 px-3 py-2 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 text-xs font-bold">
+                    {stockError}
+                  </div>
+                )}
+
+                {stockDetail && !stockLoading && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 mt-4">
+                      <Metric label="Stock à l'ouverture" value={formatMontant(Number(stockDetail.totaux.valeur_ouverture))} hint={`${stockDetail.totaux.qte_ouverture} unités`} />
+                      <Metric label="Stock à la clôture" value={formatMontant(Number(stockDetail.totaux.valeur_cloture))} hint={`${stockDetail.totaux.qte_cloture} unités`} />
+                      <Metric label="Entrées" value={formatMontant(Number(stockDetail.totaux.valeur_entrees))} hint={`+${stockDetail.totaux.qte_entrees} unités`} />
+                      <Metric label="Sorties hors ventes" value={formatMontant(Number(stockDetail.totaux.valeur_sorties_autres))} hint={`−${stockDetail.totaux.qte_sorties_autres} unités`} tone={stockDetail.totaux.qte_sorties_autres > 0 ? 'warn' : 'neutral'} />
+                      <Metric label="Valeur du stock vendu" value={formatMontant(Number(stockDetail.totaux.valeur_vendues))} hint={`${stockDetail.totaux.qte_vendues} unités`} />
+                      <Metric label="Produits mouvementés" value={String(stockDetail.totaux.produits_mouvementes)} hint={`sur ${stockDetail.totaux.produits_suivis} suivis`} />
+                    </div>
+
+                    <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 dark:border-white/10">
+                      <table className="w-full text-[11px]">
+                        <thead className="bg-neutral-50 dark:bg-white/5">
+                          <tr className="text-[9px] uppercase tracking-wider text-neutral-400">
+                            <th className="text-left px-2 py-1.5">Produit</th>
+                            <th className="text-right px-2 py-1.5">Ouv.</th>
+                            <th className="text-right px-2 py-1.5">Ent.</th>
+                            <th className="text-right px-2 py-1.5">Vend.</th>
+                            <th className="text-right px-2 py-1.5">Aut.</th>
+                            <th className="text-right px-2 py-1.5">Clôt.</th>
+                            <th className="text-right px-2 py-1.5">Valeur vendue</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stockDetail.produits.length === 0 && (
+                            <tr>
+                              <td colSpan={7} className="px-2 py-3 text-center text-neutral-500">
+                                Aucun mouvement de stock sur cette session.
+                              </td>
+                            </tr>
+                          )}
+                          {stockDetail.produits.map((p) => (
+                            <tr key={p.produit_id} className="border-t border-neutral-100 dark:border-white/5">
+                              <td className="px-2 py-1.5">
+                                <span className="font-medium text-primary dark:text-white">{p.produit_nom}</span>
+                                <span className="ml-1 text-[9px] uppercase font-bold text-neutral-400">
+                                  {p.departement === 'cuisine' ? 'cuisine' : 'bar'}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">{p.qte_ouverture}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums text-emerald-600">{p.qte_entrees || ''}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{p.qte_vendues || ''}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums text-amber-600">{p.qte_sorties_autres || ''}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums font-bold text-primary dark:text-white">{p.qte_cloture}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">{p.valeur_vendues ? formatMontant(p.valeur_vendues) : ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <p className="flex items-start gap-1.5 mt-3 text-[11px] text-neutral-500 dark:text-neutral-400">
+                      <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      {stockDetail.comptage.disponible
+                        ? `Un comptage physique existe pour la journée d'exploitation (${stockDetail.comptage.produits_comptes} produit(s), écart ${formatMontant(stockDetail.comptage.ecart_valeur)}). Il couvre la journée entière, pas uniquement ce shift.`
+                        : "Aucun comptage physique sur cette journée : le rapprochement est théorique, reconstruit à partir des mouvements de stock (ouverture = stock actuel moins les mouvements postérieurs au shift)."}
+                    </p>
+                  </>
+                )}
+              </>
+            )}
 
             {detail.commentaire && (
               <p className="mt-3 p-3 rounded-xl bg-neutral-100 dark:bg-white/5 text-xs text-neutral-600 dark:text-neutral-300">
@@ -1024,10 +1273,12 @@ function SessionCard({
 function Metric({
   label,
   value,
+  hint,
   tone = 'neutral',
 }: {
   label: string;
   value: string;
+  hint?: string;
   tone?: 'neutral' | 'warn';
 }) {
   return (
@@ -1041,6 +1292,7 @@ function Metric({
       >
         {value}
       </p>
+      {hint && <p className="text-[10px] text-neutral-400 mt-0.5 tabular-nums">{hint}</p>}
     </div>
   );
 }

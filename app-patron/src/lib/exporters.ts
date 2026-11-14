@@ -15,7 +15,9 @@ export type ExportType =
   | 'rapport_stock_synthese'
   | 'rapport_stock_jour_produit'
   | 'journal_mouvements_stock'
-  | 'journal_sessions_shift';
+  | 'journal_sessions_shift'
+  | 'rapport_stock_shift'
+  | 'rapport_stock_shift_produit';
 
 export interface ExportColumn {
   key: string;
@@ -359,6 +361,57 @@ export const EXPORT_DEFINITIONS: ExportDefinition[] = [
       { key: 'montant_compte', label: 'Montant compté', numeric: true },
       { key: 'ecart', label: 'Écart', numeric: true },
       { key: 'commentaire', label: 'Commentaire' },
+    ],
+  },
+  {
+    type: 'rapport_stock_shift',
+    label: 'Rapprochement de stock par shift (synthèse)',
+    description: 'Une ligne par session : stock ouvré/clôturé, entrées, ventes et sorties valorisées.',
+    category: 'Stock',
+    columns: [
+      { key: 'business_date', label: "Journée d'exploitation" },
+      { key: 'shift', label: 'Shift' },
+      { key: 'heure_debut', label: 'Début' },
+      { key: 'heure_fin', label: 'Fin' },
+      { key: 'statut', label: 'Statut' },
+      { key: 'qte_ouverture', label: 'Qté ouverture', numeric: true },
+      { key: 'valeur_ouverture', label: 'Valeur ouverture', numeric: true },
+      { key: 'qte_entrees', label: 'Qté entrées', numeric: true },
+      { key: 'valeur_entrees', label: 'Valeur entrées', numeric: true },
+      { key: 'qte_vendues', label: 'Qté vendues', numeric: true },
+      { key: 'valeur_vendues', label: 'Valeur vendue (COGS)', numeric: true },
+      { key: 'qte_sorties_autres', label: 'Qté sorties autres', numeric: true },
+      { key: 'valeur_sorties_autres', label: 'Valeur sorties autres', numeric: true },
+      { key: 'qte_cloture', label: 'Qté clôture', numeric: true },
+      { key: 'valeur_cloture', label: 'Valeur clôture', numeric: true },
+      { key: 'produits_mouvementes', label: 'Produits mouvementés', numeric: true },
+    ],
+  },
+  {
+    type: 'rapport_stock_shift_produit',
+    label: 'Rapprochement de stock par shift (détail produit)',
+    description: 'Une ligne par session et par désignation : ouverture, mouvements, clôture valorisés.',
+    category: 'Stock',
+    columns: [
+      { key: 'business_date', label: "Journée d'exploitation" },
+      { key: 'shift', label: 'Shift' },
+      { key: 'statut', label: 'Statut' },
+      { key: 'produit', label: 'Produit' },
+      { key: 'categorie', label: 'Catégorie' },
+      { key: 'departement', label: 'Département' },
+      { key: 'cout_unitaire', label: 'Coût unitaire', numeric: true },
+      { key: 'qte_ouverture', label: 'Qté ouverture', numeric: true },
+      { key: 'valeur_ouverture', label: 'Valeur ouverture', numeric: true },
+      { key: 'qte_entrees', label: 'Qté entrées', numeric: true },
+      { key: 'valeur_entrees', label: 'Valeur entrées', numeric: true },
+      { key: 'qte_vendues', label: 'Qté vendues', numeric: true },
+      { key: 'valeur_vendues', label: 'Valeur vendue (COGS)', numeric: true },
+      { key: 'qte_sorties_autres', label: 'Qté sorties autres', numeric: true },
+      { key: 'valeur_sorties_autres', label: 'Valeur sorties autres', numeric: true },
+      { key: 'qte_cloture', label: 'Qté clôture', numeric: true },
+      { key: 'valeur_cloture', label: 'Valeur clôture', numeric: true },
+      { key: 'ecart_qte_jour', label: 'Écart qté (jour)', numeric: true },
+      { key: 'ecart_valeur_jour', label: 'Écart valeur (jour)', numeric: true },
     ],
   },
 ];
