@@ -124,6 +124,9 @@ interface StockProduit {
   ecart_qte_comptage: number;
   ecart_valeur_comptage: number;
   prix_vente: number;
+  prix_vente_ouverture: number;
+  prix_vente_moyen: number | null;
+  prix_vente_catalogue: number;
   valeur_vente_ouverture: number;
   valeur_vente_cloture: number;
   ecart_valeur_vente_comptage: number;
@@ -656,7 +659,7 @@ export function ShiftsScreen() {
                 label="Écart de stock"
                 value={formatMontant(totaux?.ecart_stock_valeur ?? 0)}
                 tone={(totaux?.ecart_stock_valeur ?? 0) === 0 ? 'neutral' : 'warn'}
-                hint={`PV pratiqué ${formatMontant(totaux?.ecart_stock_valeur_vente ?? 0)}`}
+                hint={`PV dynamique ${formatMontant(totaux?.ecart_stock_valeur_vente ?? 0)}`}
               />
               <Kpi
                 label="Comptage"
@@ -1146,15 +1149,15 @@ export function ShiftsScreen() {
                         tone={Number(stockDetail.totaux.ecart_valeur_comptage || 0) === 0 ? 'neutral' : 'warn'}
                       />
                       <Metric
-                        label="Écart (prix pratiqué)"
+                        label="Écart (prix dynamique)"
                         value={formatMontant(Number(stockDetail.totaux.ecart_valeur_vente_comptage || 0))}
-                        hint="prix moyen du shift · manque à gagner"
+                        hint="prix en vigueur au comptage · manque à gagner"
                         tone={Number(stockDetail.totaux.ecart_valeur_vente_comptage || 0) === 0 ? 'neutral' : 'warn'}
                       />
                       <Metric
                         label="Stock après comptage"
                         value={formatMontant(Number(stockDetail.totaux.valeur_cloture))}
-                        hint={`au prix pratiqué ${formatMontant(Number(stockDetail.totaux.valeur_vente_cloture || 0))}`}
+                        hint={`au prix dynamique ${formatMontant(Number(stockDetail.totaux.valeur_vente_cloture || 0))}`}
                       />
                     </div>
 
@@ -1367,7 +1370,7 @@ function SessionCard({
             {session.comptage_stock?.effectue
               ? session.comptage_stock.ecart_qte === 0
                 ? 'Stock sans écart'
-                : `Stock ${session.comptage_stock.ecart_qte > 0 ? '+' : ''}${session.comptage_stock.ecart_qte} u. · coût ${formatMontant(session.comptage_stock.ecart_valeur)} · PV pratiqué ${formatMontant(session.comptage_stock.ecart_valeur_vente ?? 0)}`
+                : `Stock ${session.comptage_stock.ecart_qte > 0 ? '+' : ''}${session.comptage_stock.ecart_qte} u. · coût ${formatMontant(session.comptage_stock.ecart_valeur)} · PV dynamique ${formatMontant(session.comptage_stock.ecart_valeur_vente ?? 0)}`
               : 'Stock non compté'}
           </p>
         </div>

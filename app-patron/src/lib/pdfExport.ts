@@ -595,7 +595,7 @@ function dessinerSession(
       theme: 'striped',
       styles: { fontSize: 8, cellPadding: 4 },
       headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
-      head: [['Stock du shift (en FCFA)', 'Qté', 'Valeur coût', 'Valeur vente']],
+      head: [['Stock du shift (en FCFA)', 'Qté', 'Valeur coût', 'Valeur vente dyn.']],
       body: [
         [
           'Stock à l’ouverture',
@@ -640,7 +640,7 @@ function dessinerSession(
           stock.produits_comptes
             ? `Produits mouvementés : ${stock.produits_mouvementes ?? 0} · Écart valorisé : coût ${montant(
                 stock.ecart_valeur_comptage ?? 0,
-              )} / prix pratiqué ${montant(stock.ecart_valeur_vente_comptage ?? 0)}`
+              )} / prix dynamique ${montant(stock.ecart_valeur_vente_comptage ?? 0)}`
             : `Produits mouvementés : ${stock.produits_mouvementes ?? 0} · comptage physique non effectué`,
           '',
           '',
