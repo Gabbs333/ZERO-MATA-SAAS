@@ -2,6 +2,7 @@ import { ReactNode, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { ThemeToggle } from './ThemeToggle';
+import { ShiftBar } from './ShiftBar';
 import logoLight from '../assets/logo-light.png';
 import logoDark from '../assets/logo-dark.png';
 import { useTheme } from '../hooks/useTheme';
@@ -247,6 +248,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* Page Content */}
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 lg:p-8 relative custom-scrollbar">
           <div className="max-w-7xl mx-auto space-y-6 w-full">
+            <ShiftBar />
             {children}
           </div>
         </main>
