@@ -62,6 +62,7 @@ interface SessionShift {
     produits_comptes: number;
     ecart_qte: number;
     ecart_valeur: number;
+    ecart_valeur_vente: number;
   };
 }
 
@@ -86,6 +87,7 @@ interface SessionsShiftPayload {
     nb_ecarts: number;
     sessions_sans_comptage: number;
     ecart_stock_valeur: number;
+    ecart_stock_valeur_vente: number;
   };
 }
 
@@ -121,6 +123,10 @@ interface StockProduit {
   qte_comptee: number;
   ecart_qte_comptage: number;
   ecart_valeur_comptage: number;
+  prix_vente: number;
+  valeur_vente_ouverture: number;
+  valeur_vente_cloture: number;
+  ecart_valeur_vente_comptage: number;
   compte_le: string | null;
   qte_comptee_jour: number;
   ecart_qte_jour: number;
@@ -139,6 +145,7 @@ interface StockSession {
     produits_comptes: number;
     ecart_qte: number;
     ecart_valeur: number;
+    ecart_valeur_vente: number;
     date_comptage: string | null;
     portee: 'shift';
   };
@@ -633,7 +640,7 @@ export function ShiftsScreen() {
             </div>
 
             {/* KPIs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
               <Kpi label="Sessions" value={String(totaux?.sessions ?? 0)} hint={`${totaux?.sessions_ouvertes ?? 0} ouverte(s)`} />
               <Kpi label="CA total" value={formatMontant(totaux?.ventes ?? 0)} />
               <Kpi label="CA bar" value={formatMontant(totaux?.ventes_bar ?? 0)} />
@@ -649,10 +656,16 @@ export function ShiftsScreen() {
                 label="Écart de stock"
                 value={formatMontant(totaux?.ecart_stock_valeur ?? 0)}
                 tone={(totaux?.ecart_stock_valeur ?? 0) === 0 ? 'neutral' : 'warn'}
+                hint={`PV ${formatMontant(totaux?.ecart_stock_valeur_vente ?? 0)}`}
+              />
+              <Kpi
+                label="Comptage"
+                value={`${(totaux?.sessions ?? 0) - (totaux?.sessions_sans_comptage ?? 0)}/${totaux?.sessions ?? 0}`}
+                tone={(totaux?.sessions_sans_comptage ?? 0) > 0 ? 'warn' : 'neutral'}
                 hint={
                   (totaux?.sessions_sans_comptage ?? 0) > 0
                     ? `${totaux?.sessions_sans_comptage} session(s) non comptée(s)`
-                    : 'Comptage saisi à chaque passation'
+                    : 'Toutes les sessions comptées'
                 }
               />
             </div>
@@ -1133,9 +1146,15 @@ export function ShiftsScreen() {
                         tone={Number(stockDetail.totaux.ecart_valeur_comptage || 0) === 0 ? 'neutral' : 'warn'}
                       />
                       <Metric
+                        label="Écart (prix de vente)"
+                        value={formatMontant(Number(stockDetail.totaux.ecart_valeur_vente_comptage || 0))}
+                        hint="manque à gagner / surplus potentiel"
+                        tone={Number(stockDetail.totaux.ecart_valeur_vente_comptage || 0) === 0 ? 'neutral' : 'warn'}
+                      />
+                      <Metric
                         label="Stock après comptage"
                         value={formatMontant(Number(stockDetail.totaux.valeur_cloture))}
-                        hint={`théorique ${stockDetail.totaux.qte_cloture_avant_comptage ?? stockDetail.totaux.qte_cloture} → compté ${stockDetail.totaux.qte_comptee ?? 0}`}
+                        hint={`au prix de vente ${formatMontant(Number(stockDetail.totaux.valeur_vente_cloture || 0))}`}
                       />
                     </div>
 
@@ -1151,13 +1170,14 @@ export function ShiftsScreen() {
                             <th className="text-right px-2 py-1.5">Clôt.</th>
                             <th className="text-right px-2 py-1.5">Compté</th>
                             <th className="text-right px-2 py-1.5">Écart</th>
+                            <th className="text-right px-2 py-1.5">Écart PV</th>
                             <th className="text-right px-2 py-1.5">Valeur vendue</th>
                           </tr>
                         </thead>
                         <tbody>
                           {stockDetail.produits.length === 0 && (
                             <tr>
-                              <td colSpan={9} className="px-2 py-3 text-center text-neutral-500">
+                              <td colSpan={10} className="px-2 py-3 text-center text-neutral-500">
                                 Aucun mouvement de stock sur cette session.
                               </td>
                             </tr>
@@ -1187,6 +1207,20 @@ export function ShiftsScreen() {
                                 )}
                               >
                                 {p.compte_le ? (p.ecart_qte_comptage > 0 ? `+${p.ecart_qte_comptage}` : p.ecart_qte_comptage) : '—'}
+                              </td>
+                              <td
+                                className={twMerge(
+                                  'px-2 py-1.5 text-right tabular-nums',
+                                  !p.compte_le
+                                    ? 'text-neutral-300 dark:text-neutral-600'
+                                    : p.ecart_valeur_vente_comptage === 0
+                                    ? 'text-emerald-600'
+                                    : 'text-amber-600'
+                                )}
+                              >
+                                {p.compte_le && p.ecart_valeur_vente_comptage !== 0
+                                  ? formatMontant(p.ecart_valeur_vente_comptage)
+                                  : ''}
                               </td>
                               <td className="px-2 py-1.5 text-right tabular-nums">{p.valeur_vendues ? formatMontant(p.valeur_vendues) : ''}</td>
                             </tr>
@@ -1333,7 +1367,7 @@ function SessionCard({
             {session.comptage_stock?.effectue
               ? session.comptage_stock.ecart_qte === 0
                 ? 'Stock sans écart'
-                : `Stock ${session.comptage_stock.ecart_qte > 0 ? '+' : ''}${session.comptage_stock.ecart_qte} u. (${formatMontant(session.comptage_stock.ecart_valeur)})`
+                : `Stock ${session.comptage_stock.ecart_qte > 0 ? '+' : ''}${session.comptage_stock.ecart_qte} u. · coût ${formatMontant(session.comptage_stock.ecart_valeur)} · PV ${formatMontant(session.comptage_stock.ecart_valeur_vente ?? 0)}`
               : 'Stock non compté'}
           </p>
         </div>

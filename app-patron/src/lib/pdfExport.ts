@@ -328,6 +328,11 @@ export interface StockResume {
   ecart_qte_comptage?: number;
   ecart_valeur_comptage?: number;
   produits_comptes?: number;
+  /** Valorisation au prix de vente (catalogue) */
+  valeur_vente_ouverture?: number;
+  valeur_vente_cloture?: number;
+  valeur_vente_cloture_avant_comptage?: number;
+  ecart_valeur_vente_comptage?: number;
 }
 
 export interface PassationMeta {
@@ -587,16 +592,24 @@ function dessinerSession(
       theme: 'striped',
       styles: { fontSize: 9, cellPadding: 5 },
       headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
-      head: [['Stock (mouvements du shift)', 'Quantité', 'Valeur']],
+      head: [['Stock (mouvements du shift)', 'Quantité', 'Valeur coût', 'Valeur vente']],
       body: [
-        ['Stock à l’ouverture', String(stock.qte_ouverture), montant(stock.valeur_ouverture)],
-        ['Entrées (ravitaillements, retours)', String(stock.qte_entrees), montant(stock.valeur_entrees)],
-        ['Sorties ventes (coût des marchandises)', String(stock.qte_vendues), montant(stock.valeur_vendues)],
-        ['Sorties hors ventes (pertes, échanges)', String(stock.qte_sorties_autres), montant(stock.valeur_sorties_autres)],
+        [
+          'Stock à l’ouverture',
+          String(stock.qte_ouverture),
+          montant(stock.valeur_ouverture),
+          stock.valeur_vente_ouverture === undefined ? '' : montant(stock.valeur_vente_ouverture),
+        ],
+        ['Entrées (ravitaillements, retours)', String(stock.qte_entrees), montant(stock.valeur_entrees), ''],
+        ['Sorties ventes (coût des marchandises)', String(stock.qte_vendues), montant(stock.valeur_vendues), ''],
+        ['Sorties hors ventes (pertes, échanges)', String(stock.qte_sorties_autres), montant(stock.valeur_sorties_autres), ''],
         [
           'Stock à la clôture (théorique)',
           String(stock.qte_cloture_avant_comptage ?? stock.qte_cloture),
           montant(stock.valeur_cloture_avant_comptage ?? stock.valeur_cloture),
+          stock.valeur_vente_cloture_avant_comptage === undefined
+            ? ''
+            : montant(stock.valeur_vente_cloture_avant_comptage),
         ],
         ...(stock.produits_comptes
           ? [
@@ -604,21 +617,33 @@ function dessinerSession(
                 `Comptage physique (${stock.produits_comptes} produit(s))`,
                 String(stock.qte_comptee ?? 0),
                 '',
+                '',
               ],
               [
                 'Écart constaté au comptage',
                 String(stock.ecart_qte_comptage ?? 0),
                 montant(stock.ecart_valeur_comptage ?? 0),
+                stock.ecart_valeur_vente_comptage === undefined
+                  ? ''
+                  : montant(stock.ecart_valeur_vente_comptage),
               ],
-              ['Stock après comptage (aligné)', String(stock.qte_cloture), montant(stock.valeur_cloture)],
+              [
+                'Stock après comptage (aligné)',
+                String(stock.qte_cloture),
+                montant(stock.valeur_cloture),
+                stock.valeur_vente_cloture === undefined ? '' : montant(stock.valeur_vente_cloture),
+              ],
             ]
-          : [['Comptage physique', 'non effectué', '']]),
+          : [['Comptage physique', 'non effectué', '', '']]),
       ],
       foot: [
         [
-          stock.produits_mouvementes
-            ? `Produits mouvementés : ${stock.produits_mouvementes}`
-            : 'Aucun produit mouvementé sur ce shift',
+          stock.produits_comptes
+            ? `Produits mouvementés : ${stock.produits_mouvementes ?? 0} · Écart valorisé : coût ${montant(
+                stock.ecart_valeur_comptage ?? 0,
+              )} / prix de vente ${montant(stock.ecart_valeur_vente_comptage ?? 0)}`
+            : `Produits mouvementés : ${stock.produits_mouvementes ?? 0} · comptage physique non effectué`,
+          '',
           '',
           '',
         ],
