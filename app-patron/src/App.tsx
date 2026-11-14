@@ -25,6 +25,7 @@ import { ExportsScreen } from './screens/ExportsScreen';
 import { UserProfileScreen } from './screens/UserProfileScreen';
 import { SystemActivityScreen } from './screens/SystemActivityScreen';
 import { TarifsScreen } from './screens/TarifsScreen';
+import { ShiftsScreen } from './screens/ShiftsScreen';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -235,6 +236,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <TarifsScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shifts"
+            element={
+              <ProtectedRoute>
+                <ShiftsScreen />
               </ProtectedRoute>
             }
           />

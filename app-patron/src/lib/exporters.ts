@@ -14,7 +14,8 @@ export type ExportType =
   | 'rapport_stock_journalier'
   | 'rapport_stock_synthese'
   | 'rapport_stock_jour_produit'
-  | 'journal_mouvements_stock';
+  | 'journal_mouvements_stock'
+  | 'journal_sessions_shift';
 
 export interface ExportColumn {
   key: string;
@@ -325,6 +326,39 @@ export const EXPORT_DEFINITIONS: ExportDefinition[] = [
       { key: 'valeur', label: 'Valeur', numeric: true },
       { key: 'reference', label: 'Référence' },
       { key: 'agent', label: 'Agent' },
+    ],
+  },
+  {
+    type: 'journal_sessions_shift',
+    label: 'Journal des shifts (passations)',
+    description: 'Une ligne par session : CA bar/cuisine, encaissements par mode, montant compté et écart.',
+    category: 'Caisse',
+    columns: [
+      { key: 'business_date', label: "Journée d'exploitation" },
+      { key: 'shift', label: 'Shift' },
+      { key: 'heure_debut', label: 'Début' },
+      { key: 'heure_fin', label: 'Fin' },
+      { key: 'statut', label: 'Statut' },
+      { key: 'ouverte_le', label: 'Ouverte le' },
+      { key: 'fermee_le', label: 'Fermée le' },
+      { key: 'ouverte_par', label: 'Ouverte par' },
+      { key: 'fermee_par', label: 'Fermée par' },
+      { key: 'fond_initial', label: 'Fond initial', numeric: true },
+      { key: 'ventes_bar', label: 'Ventes bar', numeric: true },
+      { key: 'ventes_cuisine', label: 'Ventes cuisine', numeric: true },
+      { key: 'ventes_total', label: 'Ventes totales', numeric: true },
+      { key: 'commandes', label: 'Commandes', numeric: true },
+      { key: 'impayes', label: 'Impayés', numeric: true },
+      { key: 'encaisse_especes', label: 'Encaissé espèces', numeric: true },
+      { key: 'encaisse_mobile_money', label: 'Encaissé mobile money', numeric: true },
+      { key: 'encaisse_autre', label: 'Encaissé autre', numeric: true },
+      { key: 'encaissements', label: 'Encaissements', numeric: true },
+      { key: 'entrees_hors_ventes', label: 'Entrées hors ventes', numeric: true },
+      { key: 'sorties_hors_ventes', label: 'Sorties hors ventes', numeric: true },
+      { key: 'solde_theorique', label: 'Solde théorique', numeric: true },
+      { key: 'montant_compte', label: 'Montant compté', numeric: true },
+      { key: 'ecart', label: 'Écart', numeric: true },
+      { key: 'commentaire', label: 'Commentaire' },
     ],
   },
 ];

@@ -19,7 +19,8 @@ import {
   ArrowLeftCircle,
   Wallet,
   Tag,
-  Download
+  Download,
+  Clock
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationsPopover } from './NotificationsPopover';
@@ -101,6 +102,7 @@ export function Layout({ children }: LayoutProps) {
     { text: 'Staff', icon: Users, path: '/utilisateurs', roles: ['patron'] },
     { text: 'Settings', icon: Settings, path: '/profil', roles: ['gerant', 'patron'] },
     { text: 'Tarifs', icon: Tag, path: '/tarifs', roles: ['patron'] },
+    { text: 'Shifts', icon: Clock, path: '/shifts', roles: ['gerant', 'patron'] },
   ];
 
   const secondaryItems = [

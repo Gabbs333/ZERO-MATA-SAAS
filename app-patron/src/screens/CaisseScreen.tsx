@@ -7,6 +7,7 @@ import { EXPORT_DEFINITIONS, downloadCsv } from '../lib/exporters';
 import type { ExportDataset } from '../lib/exporters';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { useNavigate } from 'react-router-dom';
 import {
   Wallet, Calendar, ArrowUpCircle, ArrowDownCircle,
   TrendingUp, TrendingDown, Banknote, Smartphone,
@@ -48,6 +49,7 @@ interface ClotureCaisse {
 
 export function CaisseScreen() {
   const profile = useAuthStore((state) => state.profile);
+  const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [montantCompte, setMontantCompte] = useState('');
   const [commentaireCloture, setCommentaireCloture] = useState('');
@@ -264,6 +266,14 @@ export function CaisseScreen() {
                 <Download className="w-4 h-4" />
               )}
               Exporter
+            </button>
+            <button
+              onClick={() => navigate('/shifts')}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-100 dark:bg-white/5 text-primary dark:text-white text-sm font-medium hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors"
+              title="Sessions de shift et passations"
+            >
+              <Clock className="w-4 h-4" />
+              Shifts
             </button>
           </div>
         </div>

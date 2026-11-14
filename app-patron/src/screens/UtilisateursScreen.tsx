@@ -4,19 +4,64 @@ import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import { UserPlus, Search, Edit, UserX, X, Trash2, TrendingUp, ShoppingBag, Banknote } from 'lucide-react';
 import type { Profile } from '../types/database.types';
-import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import {
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  subDays,
+  subMonths,
+  format,
+} from 'date-fns';
 import { formatMontant } from '../utils/format';
 
 // Get Supabase configuration
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseServiceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
+const PERIODES: { label: string; val: 'today' | 'yesterday' | '7d' | 'week' | 'month' | '6m' | 'custom' }[] = [
+  { label: "Aujourd'hui", val: 'today' },
+  { label: 'Hier', val: 'yesterday' },
+  { label: '7 jours', val: '7d' },
+  { label: 'Semaine', val: 'week' },
+  { label: 'Mois', val: 'month' },
+  { label: '6 mois', val: '6m' },
+  { label: 'Personnalisé', val: 'custom' },
+];
+
+/** Écart en % vs période précédente (null si pas de base de comparaison). */
+function evolution(courant: number, precedent: number): number | null {
+  if (!precedent || precedent <= 0) return null;
+  return Math.round(((courant - precedent) / precedent) * 100);
+}
+
+function Delta({ courant, precedent }: { courant: number; precedent: number }) {
+  const pct = evolution(courant, precedent);
+  if (pct === null) return null;
+  const positif = pct >= 0;
+  return (
+    <span
+      className={`text-[10px] font-bold ${
+        positif ? 'text-emerald-600 dark:text-emerald-400' : 'text-semantic-red'
+      }`}
+    >
+      {positif ? '▲' : '▼'} {Math.abs(pct)}% vs préc.
+    </span>
+  );
+}
+
 export function UtilisateursScreen() {
   const profile = useAuthStore((state) => state.profile);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'serveuse' | 'comptoir' | 'gerant'>('all');
-  const [perfPeriod, setPerfPeriod] = useState<'today' | 'week' | 'month'>('month');
-  
+  const [perfPeriod, setPerfPeriod] = useState<
+    'today' | 'yesterday' | '7d' | 'week' | 'month' | '6m' | 'custom'
+  >('today');
+  const [customDebut, setCustomDebut] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [customFin, setCustomFin] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
 
@@ -26,13 +71,38 @@ export function UtilisateursScreen() {
     switch (perfPeriod) {
       case 'today':
         return { debut: startOfDay(now).toISOString(), fin: endOfDay(now).toISOString() };
+      case 'yesterday': {
+        const h = subDays(now, 1);
+        return { debut: startOfDay(h).toISOString(), fin: endOfDay(h).toISOString() };
+      }
+      case '7d':
+        return { debut: startOfDay(subDays(now, 6)).toISOString(), fin: endOfDay(now).toISOString() };
       case 'week':
         return { debut: startOfWeek(now, { weekStartsOn: 1 }).toISOString(), fin: endOfWeek(now, { weekStartsOn: 1 }).toISOString() };
       case 'month':
-      default:
         return { debut: startOfMonth(now).toISOString(), fin: endOfMonth(now).toISOString() };
+      case '6m':
+        return { debut: startOfDay(subMonths(now, 6)).toISOString(), fin: endOfDay(now).toISOString() };
+      case 'custom':
+      default: {
+        const d = new Date(`${customDebut}T00:00:00`);
+        const f = new Date(`${customFin}T23:59:59`);
+        const [debut, fin] = d <= f ? [d, f] : [f, d];
+        return { debut: debut.toISOString(), fin: fin.toISOString() };
+      }
     }
-  }, [perfPeriod]);
+  }, [perfPeriod, customDebut, customFin]);
+
+  // Période précédente de même durée (pour la comparaison)
+  const prevRange = useMemo(() => {
+    const debut = new Date(dateRange.debut).getTime();
+    const fin = new Date(dateRange.fin).getTime();
+    const duree = Math.max(fin - debut, 0);
+    return {
+      debut: new Date(debut - duree - 1).toISOString(),
+      fin: new Date(debut - 1).toISOString(),
+    };
+  }, [dateRange]);
 
   // Récupérer les performances du personnel
   const { data: performances } = useSupabaseQuery<any>(
@@ -53,6 +123,42 @@ export function UtilisateursScreen() {
     performances?.serveurs?.forEach((s: any) => map.set(s.utilisateur_id, s));
     return map;
   }, [performances]);
+
+  const { data: performancesPrec } = useSupabaseQuery<any>(
+    ['performances_personnel_prev', prevRange.debut, prevRange.fin, profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: null, error: null };
+      const { data, error } = await supabase.rpc('get_performances_personnel', {
+        p_debut: prevRange.debut,
+        p_fin: prevRange.fin,
+      });
+      return { data, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
+
+  const prevServeursMap = useMemo(() => {
+    const map = new Map();
+    performancesPrec?.serveurs?.forEach((s: any) => map.set(s.utilisateur_id, s));
+    return map;
+  }, [performancesPrec]);
+
+  const prevComptoirMap = useMemo(() => {
+    const map = new Map();
+    performancesPrec?.comptoir?.forEach((c: any) => map.set(c.utilisateur_id, c));
+    return map;
+  }, [performancesPrec]);
+
+  const periodeLabel = useMemo(
+    () =>
+      perfPeriod === 'custom'
+        ? `${format(new Date(`${customDebut}T00:00:00`), 'dd/MM/yy')} → ${format(
+            new Date(`${customFin}T00:00:00`),
+            'dd/MM/yy'
+          )}`
+        : PERIODES.find((p) => p.val === perfPeriod)?.label || '',
+    [perfPeriod, customDebut, customFin]
+  );
 
   const comptoirMap = useMemo(() => {
     const map = new Map();
@@ -363,18 +469,14 @@ export function UtilisateursScreen() {
                 />
             </div>
             
-            <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+            <div className="flex flex-col items-stretch md:items-end gap-2 w-full md:w-auto">
               {/* Sélecteur de période de performance */}
-              <div className="flex p-1 bg-neutral-100 dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5">
-                {[
-                  { label: "Aujourd'hui", val: 'today' },
-                  { label: 'Semaine', val: 'week' },
-                  { label: 'Mois', val: 'month' },
-                ].map(p => (
+              <div className="flex p-1 bg-neutral-100 dark:bg-white/5 rounded-xl border border-neutral-200 dark:border-white/5 overflow-x-auto">
+                {PERIODES.map(p => (
                   <button
                     key={p.val}
-                    onClick={() => setPerfPeriod(p.val as any)}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    onClick={() => setPerfPeriod(p.val)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
                       perfPeriod === p.val ? 'bg-primary text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
                     }`}
                   >
@@ -383,7 +485,25 @@ export function UtilisateursScreen() {
                 ))}
               </div>
 
-              <div className="flex p-1 bg-neutral-100 dark:bg-white/5 rounded-xl overflow-x-auto border border-neutral-200 dark:border-white/5">
+              {perfPeriod === 'custom' && (
+                <div className="flex items-center gap-2 justify-end">
+                  <input
+                    type="date"
+                    value={customDebut}
+                    onChange={(e) => setCustomDebut(e.target.value)}
+                    className="px-2 py-1.5 rounded-lg bg-neutral-100 dark:bg-white/5 border border-neutral-200 dark:border-white/5 text-xs text-primary dark:text-white outline-none"
+                  />
+                  <span className="text-neutral-400 text-xs">→</span>
+                  <input
+                    type="date"
+                    value={customFin}
+                    onChange={(e) => setCustomFin(e.target.value)}
+                    className="px-2 py-1.5 rounded-lg bg-neutral-100 dark:bg-white/5 border border-neutral-200 dark:border-white/5 text-xs text-primary dark:text-white outline-none"
+                  />
+                </div>
+              )}
+
+              <div className="flex p-1 bg-neutral-100 dark:bg-white/5 rounded-xl overflow-x-auto border border-neutral-200 dark:border-white/5 self-end">
                   {(['all', 'serveuse', 'comptoir', 'gerant'] as const).map((role) => (
                       <button 
                           key={role}
@@ -471,17 +591,31 @@ export function UtilisateursScreen() {
                   {/* Section Performances de l'employé */}
                   {user.role === 'serveuse' && (() => {
                     const stats = serveursMap.get(user.id);
+                    const prev = prevServeursMap.get(user.id);
                     const impayes = stats?.montant_impayes || 0;
                     return (
                       <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-white/5 space-y-3 bg-neutral-50 dark:bg-white/5 p-3 rounded-xl">
+                        <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                          Performance · {periodeLabel}
+                        </p>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Commandes</p>
                             <p className="text-base font-black text-primary dark:text-white mt-0.5">{stats?.nombre_commandes || 0}</p>
+                            <Delta courant={stats?.nombre_commandes || 0} precedent={prev?.nombre_commandes || 0} />
                           </div>
                           <div>
                             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Chiffre d'Affaires</p>
                             <p className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{formatMontant(stats?.chiffre_affaires || 0)}</p>
+                            <Delta courant={stats?.chiffre_affaires || 0} precedent={prev?.chiffre_affaires || 0} />
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Encaissé</p>
+                            <p className="text-base font-black text-blue-600 dark:text-blue-400 mt-0.5">{formatMontant(stats?.montant_encaisse || 0)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Taux d'encaissement</p>
+                            <p className="text-base font-black text-primary dark:text-white mt-0.5">{Number(stats?.taux_encaissement || 0)}%</p>
                           </div>
                         </div>
                         <div className="pt-2 border-t border-neutral-200/50 dark:border-white/5 flex items-center justify-between">
@@ -494,16 +628,22 @@ export function UtilisateursScreen() {
 
                   {user.role === 'comptoir' && (() => {
                     const stats = comptoirMap.get(user.id);
+                    const prev = prevComptoirMap.get(user.id);
                     return (
                       <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-white/5 space-y-3 bg-neutral-50 dark:bg-white/5 p-3 rounded-xl">
+                        <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                          Performance · {periodeLabel}
+                        </p>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Encaissements</p>
                             <p className="text-base font-black text-primary dark:text-white mt-0.5">{stats?.nombre_encaissements || 0}</p>
+                            <Delta courant={stats?.nombre_encaissements || 0} precedent={prev?.nombre_encaissements || 0} />
                           </div>
                           <div>
                             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Total Encaissé</p>
                             <p className="text-base font-black text-blue-600 dark:text-blue-400 mt-0.5">{formatMontant(stats?.total_encaisse || 0)}</p>
+                            <Delta courant={stats?.total_encaisse || 0} precedent={prev?.total_encaisse || 0} />
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3 pt-2 border-t border-neutral-200/50 dark:border-white/5">
@@ -514,6 +654,7 @@ export function UtilisateursScreen() {
                           <div>
                             <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">CA Commandes</p>
                             <p className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{formatMontant(stats?.chiffre_affaires || 0)}</p>
+                            <Delta courant={stats?.chiffre_affaires || 0} precedent={prev?.chiffre_affaires || 0} />
                           </div>
                         </div>
                       </div>
