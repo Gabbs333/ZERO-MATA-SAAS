@@ -448,6 +448,9 @@ function dessinerSession(
   const margin = 40;
   const pageHeight = doc.internal.pageSize.getHeight();
   const montant = (v: number) => pdfText(formatMontant(Number(v) || 0));
+  // Tableau stock : montants compacts, la devise est rappelée dans l'en-tête
+  const nombre = (v: number | undefined) =>
+    v === undefined ? '' : pdfText(formatMontant(Number(v) || 0).replace(/\s*FCFA$/, ''));
 
   let y = startY;
 
@@ -590,26 +593,24 @@ function dessinerSession(
       startY: y,
       margin: { left: margin, right: margin },
       theme: 'striped',
-      styles: { fontSize: 9, cellPadding: 5 },
+      styles: { fontSize: 8, cellPadding: 4 },
       headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
-      head: [['Stock (mouvements du shift)', 'Quantité', 'Valeur coût', 'Valeur vente']],
+      head: [['Stock du shift (en FCFA)', 'Qté', 'Valeur coût', 'Valeur vente']],
       body: [
         [
           'Stock à l’ouverture',
           String(stock.qte_ouverture),
-          montant(stock.valeur_ouverture),
-          stock.valeur_vente_ouverture === undefined ? '' : montant(stock.valeur_vente_ouverture),
+          nombre(stock.valeur_ouverture),
+          nombre(stock.valeur_vente_ouverture),
         ],
-        ['Entrées (ravitaillements, retours)', String(stock.qte_entrees), montant(stock.valeur_entrees), ''],
-        ['Sorties ventes (coût des marchandises)', String(stock.qte_vendues), montant(stock.valeur_vendues), ''],
-        ['Sorties hors ventes (pertes, échanges)', String(stock.qte_sorties_autres), montant(stock.valeur_sorties_autres), ''],
+        ['Entrées (ravitaillements, retours)', String(stock.qte_entrees), nombre(stock.valeur_entrees), ''],
+        ['Sorties ventes (coût des marchandises)', String(stock.qte_vendues), nombre(stock.valeur_vendues), ''],
+        ['Sorties hors ventes (pertes, échanges)', String(stock.qte_sorties_autres), nombre(stock.valeur_sorties_autres), ''],
         [
           'Stock à la clôture (théorique)',
           String(stock.qte_cloture_avant_comptage ?? stock.qte_cloture),
-          montant(stock.valeur_cloture_avant_comptage ?? stock.valeur_cloture),
-          stock.valeur_vente_cloture_avant_comptage === undefined
-            ? ''
-            : montant(stock.valeur_vente_cloture_avant_comptage),
+          nombre(stock.valeur_cloture_avant_comptage ?? stock.valeur_cloture),
+          nombre(stock.valeur_vente_cloture_avant_comptage),
         ],
         ...(stock.produits_comptes
           ? [
@@ -622,16 +623,14 @@ function dessinerSession(
               [
                 'Écart constaté au comptage',
                 String(stock.ecart_qte_comptage ?? 0),
-                montant(stock.ecart_valeur_comptage ?? 0),
-                stock.ecart_valeur_vente_comptage === undefined
-                  ? ''
-                  : montant(stock.ecart_valeur_vente_comptage),
+                nombre(stock.ecart_valeur_comptage ?? 0),
+                nombre(stock.ecart_valeur_vente_comptage ?? 0),
               ],
               [
                 'Stock après comptage (aligné)',
                 String(stock.qte_cloture),
-                montant(stock.valeur_cloture),
-                stock.valeur_vente_cloture === undefined ? '' : montant(stock.valeur_vente_cloture),
+                nombre(stock.valeur_cloture),
+                nombre(stock.valeur_vente_cloture),
               ],
             ]
           : [['Comptage physique', 'non effectué', '', '']]),
@@ -641,14 +640,14 @@ function dessinerSession(
           stock.produits_comptes
             ? `Produits mouvementés : ${stock.produits_mouvementes ?? 0} · Écart valorisé : coût ${montant(
                 stock.ecart_valeur_comptage ?? 0,
-              )} / prix de vente ${montant(stock.ecart_valeur_vente_comptage ?? 0)}`
+              )} / prix pratiqué ${montant(stock.ecart_valeur_vente_comptage ?? 0)}`
             : `Produits mouvementés : ${stock.produits_mouvementes ?? 0} · comptage physique non effectué`,
           '',
           '',
           '',
         ],
       ],
-      footStyles: { fillColor: [245, 245, 245], textColor: 60, fontStyle: 'normal', fontSize: 8 },
+      footStyles: { fillColor: [245, 245, 245], textColor: 60, fontStyle: 'normal', fontSize: 7.5 },
     });
     y = ((doc as any).lastAutoTable?.finalY ?? y) + 14;
   }
