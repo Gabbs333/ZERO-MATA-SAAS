@@ -88,6 +88,33 @@ function formatDateFr(value: string): string {
   return `${String(d.getDate()).padStart(2, '0')} ${MOIS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+/**
+ * jsPDF et jspdf-autotable sont distribués à la fois en ESM (`module`) et en
+ * CJS/UMD (`main`). Selon le résolveur (Vite côté navigateur, Rollup, esbuild,
+ * Node), la classe/fonction se trouve sur `default`, `default.default` ou sur
+ * un export nommé. On normalise ici : un seul point d'entrée pour tous les PDF.
+ */
+async function chargerOutilsPdf(): Promise<{ jsPDF: any; autoTable: any }> {
+  const [jspdfModule, autoTableModule] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
+  const j: any = jspdfModule;
+  const a: any = autoTableModule;
+
+  const jsPDF = j?.default?.default ?? j?.default ?? j?.jsPDF;
+  const autoTable = a?.default?.default ?? a?.default ?? a?.autoTable;
+
+  if (typeof jsPDF !== 'function') {
+    throw new Error('jsPDF introuvable : impossible de générer le PDF.');
+  }
+  if (typeof autoTable !== 'function') {
+    throw new Error('jspdf-autotable introuvable : impossible de générer le PDF.');
+  }
+
+  return { jsPDF, autoTable };
+}
+
 export function buildSyntheseFilename(meta: SynthesePeriode['meta'], ext: 'pdf'): string {
   const part = (value: string) => {
     const d = new Date(value);
@@ -102,11 +129,7 @@ export function buildSyntheseFilename(meta: SynthesePeriode['meta'], ext: 'pdf')
  * pour ne pas alourdir le bundle principal.
  */
 export async function buildSynthesePdf(s: SynthesePeriode): Promise<ArrayBuffer> {
-  const [{ default: jsPDF }, autoTableModule] = await Promise.all([
-    import('jspdf'),
-    import('jspdf-autotable'),
-  ]);
-  const autoTable = (autoTableModule as any).default ?? (autoTableModule as any).autoTable;
+  const { jsPDF, autoTable } = await chargerOutilsPdf();
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -245,6 +268,261 @@ export async function downloadSynthesePdf(s: SynthesePeriode): Promise<ArrayBuff
   const link = document.createElement('a');
   link.href = url;
   link.download = buildSyntheseFilename(s.meta, 'pdf');
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return bytes;
+}
+
+// ---------------------------------------------------------------------------
+// Rapport de passation de shift — PDF
+// ---------------------------------------------------------------------------
+
+export interface PassationSession {
+  business_date: string;
+  shift_nom: string;
+  heure_debut: string;
+  heure_fin: string;
+  statut: 'ouverte' | 'fermee';
+  ouverte_le: string;
+  fermee_le: string | null;
+  ouverte_par: string;
+  fermee_par: string;
+  fond_initial: number;
+  ventes: number;
+  ventes_bar: number;
+  ventes_cuisine: number;
+  nombre_commandes: number;
+  montant_impayes: number;
+  encaissements: number;
+  encaissements_par_mode: Record<string, number> | null;
+  entrees_hors_ventes: number;
+  sorties_hors_ventes: number;
+  solde_theorique: number;
+  montant_compte: number | null;
+  ecart: number | null;
+  commentaire: string | null;
+}
+
+export interface PassationMeta {
+  etablissement_nom: string;
+  devise: string;
+  fuseau_horaire?: string;
+  edite_par?: string;
+}
+
+const MODES_LABELS: Record<string, string> = {
+  especes: 'Espèces',
+  mobile_money: 'Mobile Money',
+  carte_bancaire: 'Carte bancaire',
+  carte: 'Carte bancaire',
+  cheque: 'Chèque',
+  credit: 'Règlement de crédit',
+};
+
+function formatDateHeureFr(value: string | null): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return pdfText(value);
+  return `${String(d.getDate()).padStart(2, '0')} ${MOIS[d.getMonth()]} ${d.getFullYear()} à ${String(
+    d.getHours()
+  ).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatJourExploitation(iso: string): string {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  if (!y || !m || !d) return pdfText(iso);
+  return `${String(d).padStart(2, '0')} ${MOIS[m - 1]} ${y}`;
+}
+
+const nomFichierShift = (nom: string) =>
+  String(nom)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toUpperCase();
+
+export function buildPassationFilename(session: PassationSession, ext: 'pdf' = 'pdf'): string {
+  const jour = String(session.business_date).replace(/-/g, '');
+  return `ZEROMATA_PASSATION_${jour}_${nomFichierShift(session.shift_nom)}.${ext}`;
+}
+
+/** Génère le rapport de passation d'une session de shift (PDF A4). */
+export async function buildPassationPdf(
+  session: PassationSession,
+  meta: PassationMeta,
+): Promise<ArrayBuffer> {
+  const { jsPDF, autoTable } = await chargerOutilsPdf();
+
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 40;
+
+  const montant = (v: number) => pdfText(formatMontant(Number(v) || 0));
+
+  // --- En-tête -------------------------------------------------------------
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('Rapport de passation', margin, 50);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(110);
+  doc.text(pdfText(meta.etablissement_nom), margin, 68);
+  doc.text(
+    pdfText(
+      `${session.shift_nom} (${session.heure_debut} - ${session.heure_fin}) - journée du ${formatJourExploitation(
+        session.business_date,
+      )}`,
+    ),
+    margin,
+    82,
+  );
+  doc.text(
+    pdfText(
+      `Ouverte le ${formatDateHeureFr(session.ouverte_le)} par ${session.ouverte_par}`,
+    ),
+    margin,
+    96,
+  );
+  doc.text(
+    pdfText(
+      session.fermee_le
+        ? `Fermée le ${formatDateHeureFr(session.fermee_le)} par ${session.fermee_par}`
+        : 'Session encore ouverte',
+    ),
+    margin,
+    110,
+  );
+  doc.setTextColor(0);
+
+  // --- Activité ------------------------------------------------------------
+  autoTable(doc, {
+    startY: 128,
+    margin: { left: margin, right: margin },
+    theme: 'grid',
+    styles: { fontSize: 9, cellPadding: 6 },
+    headStyles: { fillColor: [17, 17, 17], textColor: 255, fontStyle: 'bold' },
+    head: [['Activité', 'Valeur']],
+    body: [
+      ["Chiffre d'affaires", montant(session.ventes)],
+      ['dont bar', montant(session.ventes_bar)],
+      ['dont cuisine', montant(session.ventes_cuisine)],
+      ['Commandes validées', String(session.nombre_commandes)],
+      ['Impayés de la session', montant(session.montant_impayes)],
+    ],
+  });
+
+  // --- Encaissements par mode ---------------------------------------------
+  const modes = Object.entries(session.encaissements_par_mode || {});
+  const afterActivite = (doc as any).lastAutoTable?.finalY ?? 260;
+  autoTable(doc, {
+    startY: afterActivite + 18,
+    margin: { left: margin, right: margin },
+    theme: 'striped',
+    styles: { fontSize: 9, cellPadding: 5 },
+    headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
+    head: [['Mode de paiement', 'Montant']],
+    body: modes.length
+      ? [
+          ...modes.map(([mode, valeur]) => [
+            pdfText(MODES_LABELS[mode] || mode),
+            montant(Number(valeur)),
+          ]),
+          ['Total encaissé', montant(session.encaissements)],
+        ]
+      : [['Aucun encaissement', montant(0)]],
+  });
+
+  // --- Caisse --------------------------------------------------------------
+  const afterEncaissements = (doc as any).lastAutoTable?.finalY ?? 380;
+  autoTable(doc, {
+    startY: afterEncaissements + 18,
+    margin: { left: margin, right: margin },
+    theme: 'striped',
+    styles: { fontSize: 9, cellPadding: 5 },
+    headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
+    head: [['Caisse', 'Montant']],
+    body: [
+      ['Fond initial', montant(session.fond_initial)],
+      ['Encaissements', montant(session.encaissements)],
+      ['Entrées hors ventes', montant(session.entrees_hors_ventes)],
+      ['Sorties hors ventes', `- ${montant(session.sorties_hors_ventes)}`],
+      ['Solde théorique', montant(session.solde_theorique)],
+      ['Montant compté', session.montant_compte === null ? '—' : montant(session.montant_compte)],
+    ],
+  });
+
+  // --- Écart (encadré) -----------------------------------------------------
+  const afterCaisse = (doc as any).lastAutoTable?.finalY ?? 500;
+  const ecartY = afterCaisse + 22;
+  doc.setDrawColor(210);
+  doc.setFillColor(244, 244, 245);
+  doc.roundedRect(margin, ecartY, pageWidth - margin * 2, 34, 6, 6, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  const libelleEcart =
+    session.ecart === null
+      ? 'Écart : session non clôturée'
+      : `Écart de caisse : ${montant(session.ecart)}`;
+  doc.text(pdfText(libelleEcart), margin + 12, ecartY + 22);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(
+    pdfText(session.statut === 'ouverte' ? 'Statut : ouverte' : 'Statut : fermée'),
+    pageWidth - margin - 12,
+    ecartY + 22,
+    { align: 'right' },
+  );
+
+  // --- Commentaire ---------------------------------------------------------
+  if (session.commentaire && session.commentaire.trim()) {
+    const y = ecartY + 56;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('Commentaire de passation', margin, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(90);
+    const lignes = doc.splitTextToSize(pdfText(session.commentaire.trim()), pageWidth - margin * 2);
+    doc.text(lignes, margin, y + 14);
+    doc.setTextColor(0);
+  }
+
+  // --- Pied de page --------------------------------------------------------
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i += 1) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(140);
+    doc.text(
+      pdfText(
+        `ZERO-MATA - ${meta.etablissement_nom} - ${meta.devise} - Page ${i}/${pageCount}`,
+      ),
+      margin,
+      pageHeight - 24,
+    );
+    const droite = meta.edite_par
+      ? `Édité par ${meta.edite_par}`
+      : 'Document de passation';
+    doc.text(pdfText(droite), pageWidth - margin, pageHeight - 24, { align: 'right' });
+  }
+
+  return doc.output('arraybuffer') as ArrayBuffer;
+}
+
+export async function downloadPassationPdf(
+  session: PassationSession,
+  meta: PassationMeta,
+): Promise<ArrayBuffer> {
+  const bytes = await buildPassationPdf(session, meta);
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = buildPassationFilename(session);
   document.body.appendChild(link);
   link.click();
   link.remove();

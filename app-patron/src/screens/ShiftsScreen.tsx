@@ -20,6 +20,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { formatMontant, formatModePaiement } from '../utils/format';
 import { EXPORT_DEFINITIONS } from '../lib/exporters';
 import type { ExportDefinition } from '../lib/exporters';
+import { downloadPassationPdf } from '../lib/pdfExport';
 import { ExporterButton } from '../components/ExporterButton';
 
 // ---------------------------------------------------------------------------
@@ -144,6 +145,8 @@ export function ShiftsScreen() {
   const [filtreStatut, setFiltreStatut] = useState<string>('tous');
 
   const [detail, setDetail] = useState<SessionShift | null>(null);
+  const [pdfBusy, setPdfBusy] = useState<string | null>(null);
+  const [pdfMessage, setPdfMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
   // --- Configuration
   const [shifts, setShifts] = useState<ShiftDefinition[]>([]);
@@ -329,66 +332,30 @@ export function ShiftsScreen() {
     await loadShifts();
   };
 
-  // --- Rapport de passation imprimable
-  const imprimerPassation = (s: SessionShift) => {
-    const etab = payload?.etablissement;
-    const modes = Object.entries(s.encaissements_par_mode || {})
-      .map(([mode, montant]) => `<tr><td>${formatModePaiement(mode)}</td><td class="n">${formatMontant(Number(montant))}</td></tr>`)
-      .join('');
-
-    const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
-<title>Passation ${s.shift_nom} — ${s.business_date}</title>
-<style>
-  *{box-sizing:border-box}body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:32px;font-size:13px}
-  h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:24px 0 8px;text-transform:uppercase;letter-spacing:.08em;color:#555}
-  .muted{color:#666;font-size:12px}
-  table{width:100%;border-collapse:collapse;margin-top:8px}
-  td,th{padding:6px 8px;border-bottom:1px solid #eee;text-align:left}
-  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
-  .tot{font-weight:700;border-top:2px solid #111}
-  .ecart{background:#f4f4f5;padding:10px 12px;border-radius:8px;margin-top:12px;font-weight:700}
-</style></head><body>
-<h1>Rapport de passation</h1>
-<p class="muted">${etab?.nom || ''} — ${s.shift_nom} (${s.heure_debut} → ${s.heure_fin}) — journée d'exploitation du ${s.business_date}</p>
-<p class="muted">Ouverte le ${new Date(s.ouverte_le).toLocaleString('fr-FR')} par ${s.ouverte_par}${
-      s.fermee_le ? ` · Fermée le ${new Date(s.fermee_le).toLocaleString('fr-FR')} par ${s.fermee_par}` : ' · Session encore ouverte'
-    }</p>
-
-<h2>Activité</h2>
-<table>
-  <tr><td>Chiffre d'affaires</td><td class="n">${formatMontant(s.ventes)}</td></tr>
-  <tr><td>dont bar</td><td class="n">${formatMontant(s.ventes_bar)}</td></tr>
-  <tr><td>dont cuisine</td><td class="n">${formatMontant(s.ventes_cuisine)}</td></tr>
-  <tr><td>Commandes validées</td><td class="n">${s.nombre_commandes}</td></tr>
-  <tr><td>Impayés de la session</td><td class="n">${formatMontant(s.montant_impayes)}</td></tr>
-</table>
-
-<h2>Encaissements</h2>
-<table>
-  <tr><th>Mode</th><th class="n">Montant</th></tr>
-  ${modes || '<tr><td colspan="2" class="muted">Aucun encaissement</td></tr>'}
-  <tr class="tot"><td>Total encaissé</td><td class="n">${formatMontant(s.encaissements)}</td></tr>
-</table>
-
-<h2>Caisse</h2>
-<table>
-  <tr><td>Fond initial</td><td class="n">${formatMontant(s.fond_initial)}</td></tr>
-  <tr><td>Encaissements</td><td class="n">${formatMontant(s.encaissements)}</td></tr>
-  <tr><td>Entrées hors ventes</td><td class="n">${formatMontant(s.entrees_hors_ventes)}</td></tr>
-  <tr><td>Sorties hors ventes</td><td class="n">− ${formatMontant(s.sorties_hors_ventes)}</td></tr>
-  <tr class="tot"><td>Solde théorique</td><td class="n">${formatMontant(s.solde_theorique)}</td></tr>
-  <tr><td>Montant compté</td><td class="n">${s.montant_compte === null ? '—' : formatMontant(s.montant_compte)}</td></tr>
-</table>
-<div class="ecart">Écart : ${s.ecart === null ? 'non clôturée' : formatMontant(s.ecart)}</div>
-${s.commentaire ? `<p class="muted" style="margin-top:12px"><strong>Commentaire :</strong> ${s.commentaire}</p>` : ''}
-</body></html>`;
-
-    const win = window.open('', '_blank', 'width=900,height=900');
-    if (!win) return;
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 300);
+  // --- Rapport de passation (PDF natif)
+  const telechargerPassation = async (s: SessionShift) => {
+    setPdfBusy(s.id);
+    setPdfMessage(null);
+    try {
+      await downloadPassationPdf(s, {
+        etablissement_nom: payload?.etablissement?.nom || '',
+        devise: payload?.etablissement?.devise || 'XAF',
+        fuseau_horaire: payload?.etablissement?.fuseau_horaire,
+        edite_par: [profile?.prenom, profile?.nom].filter(Boolean).join(' ') || undefined,
+      });
+      setPdfMessage({
+        type: 'ok',
+        text: `Rapport de passation ${s.shift_nom} du ${s.business_date} telecharge.`,
+      });
+    } catch (err: any) {
+      console.error('Passation PDF error:', err);
+      setPdfMessage({
+        type: 'error',
+        text: err?.message || 'Impossible de generer le rapport de passation.',
+      });
+    } finally {
+      setPdfBusy(null);
+    }
   };
 
   // -------------------------------------------------------------------------
@@ -530,6 +497,22 @@ ${s.commentaire ? `<p class="muted" style="margin-top:12px"><strong>Commentaire 
               />
             </div>
 
+            {pdfMessage && (
+              <div
+                className={twMerge(
+                  'px-4 py-2.5 rounded-xl text-xs font-bold border flex items-start justify-between gap-3',
+                  pdfMessage.type === 'ok'
+                    ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'
+                    : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
+                )}
+              >
+                <span>{pdfMessage.text}</span>
+                <button onClick={() => setPdfMessage(null)} className="opacity-60 hover:opacity-100">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {isLoading && (
               <div className="flex items-center gap-2 text-sm text-neutral-500">
                 <Loader2 className="w-4 h-4 animate-spin" /> Chargement des sessions…
@@ -578,7 +561,8 @@ ${s.commentaire ? `<p class="muted" style="margin-top:12px"><strong>Commentaire 
                         key={s.id}
                         session={s}
                         onDetail={() => setDetail(s)}
-                        onPrint={() => imprimerPassation(s)}
+                        onExportPdf={() => telechargerPassation(s)}
+                        exportBusy={pdfBusy === s.id}
                       />
                     ))}
                   </div>
@@ -848,11 +832,16 @@ ${s.commentaire ? `<p class="muted" style="margin-top:12px"><strong>Commentaire 
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => imprimerPassation(detail)}
-                  className="p-1.5 rounded-lg text-neutral-400 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/5"
-                  title="Imprimer le rapport de passation"
+                  onClick={() => telechargerPassation(detail)}
+                  disabled={pdfBusy === detail.id}
+                  className="p-1.5 rounded-lg text-neutral-400 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/5 disabled:opacity-50"
+                  title="Télécharger le rapport de passation (PDF)"
                 >
-                  <Printer className="w-4 h-4" />
+                  {pdfBusy === detail.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Printer className="w-4 h-4" />
+                  )}
                 </button>
                 <button
                   onClick={() => setDetail(null)}
@@ -952,11 +941,13 @@ function Kpi({
 function SessionCard({
   session,
   onDetail,
-  onPrint,
+  onExportPdf,
+  exportBusy,
 }: {
   session: SessionShift;
   onDetail: () => void;
-  onPrint: () => void;
+  onExportPdf: () => void;
+  exportBusy?: boolean;
 }) {
   const ecart = session.ecart;
   return (
@@ -983,11 +974,16 @@ function SessionCard({
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={onPrint}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/5"
-            title="Rapport de passation"
+            onClick={onExportPdf}
+            disabled={exportBusy}
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/5 disabled:opacity-50"
+            title="Rapport de passation (PDF)"
           >
-            <Printer className="w-4 h-4" />
+            {exportBusy ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Printer className="w-4 h-4" />
+            )}
           </button>
         </div>
       </div>
