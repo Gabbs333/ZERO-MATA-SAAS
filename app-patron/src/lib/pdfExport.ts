@@ -319,6 +319,15 @@ export interface StockResume {
   qte_cloture: number;
   valeur_cloture: number;
   produits_mouvementes?: number;
+  /** Comptage physique de la passation */
+  qte_ajustements?: number;
+  valeur_ajustements?: number;
+  qte_cloture_avant_comptage?: number;
+  valeur_cloture_avant_comptage?: number;
+  qte_comptee?: number;
+  ecart_qte_comptage?: number;
+  ecart_valeur_comptage?: number;
+  produits_comptes?: number;
 }
 
 export interface PassationMeta {
@@ -538,36 +547,6 @@ function dessinerSession(
   });
   y = ((doc as any).lastAutoTable?.finalY ?? y) + 14;
 
-  // --- Stock (rapprochement de la session)
-  if (stock) {
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      theme: 'striped',
-      styles: { fontSize: 9, cellPadding: 5 },
-      headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
-      head: [['Stock (mouvements du shift)', 'Quantité', 'Valeur']],
-      body: [
-        ['Stock à l’ouverture', String(stock.qte_ouverture), montant(stock.valeur_ouverture)],
-        ['Entrées (ravitaillements, retours)', String(stock.qte_entrees), montant(stock.valeur_entrees)],
-        ['Sorties ventes (coût des marchandises)', String(stock.qte_vendues), montant(stock.valeur_vendues)],
-        ['Sorties hors ventes (pertes, échanges)', String(stock.qte_sorties_autres), montant(stock.valeur_sorties_autres)],
-        ['Stock à la clôture (théorique)', String(stock.qte_cloture), montant(stock.valeur_cloture)],
-      ],
-      foot: [
-        [
-          stock.produits_mouvementes
-            ? `Produits mouvementés : ${stock.produits_mouvementes}`
-            : 'Aucun produit mouvementé sur ce shift',
-          '',
-          '',
-        ],
-      ],
-      footStyles: { fillColor: [245, 245, 245], textColor: 60, fontStyle: 'normal', fontSize: 8 },
-    });
-    y = ((doc as any).lastAutoTable?.finalY ?? y) + 14;
-  }
-
   // --- Écart (encadré) : passage à la page suivante si nécessaire
   if (y + 60 > pageHeight - 50) {
     doc.addPage();
@@ -598,7 +577,56 @@ function dessinerSession(
     y + 22,
     { align: 'right' },
   );
-  y += 40;
+  y += 48;
+
+  // --- Stock (rapprochement de la session)
+  if (stock) {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: margin, right: margin },
+      theme: 'striped',
+      styles: { fontSize: 9, cellPadding: 5 },
+      headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
+      head: [['Stock (mouvements du shift)', 'Quantité', 'Valeur']],
+      body: [
+        ['Stock à l’ouverture', String(stock.qte_ouverture), montant(stock.valeur_ouverture)],
+        ['Entrées (ravitaillements, retours)', String(stock.qte_entrees), montant(stock.valeur_entrees)],
+        ['Sorties ventes (coût des marchandises)', String(stock.qte_vendues), montant(stock.valeur_vendues)],
+        ['Sorties hors ventes (pertes, échanges)', String(stock.qte_sorties_autres), montant(stock.valeur_sorties_autres)],
+        [
+          'Stock à la clôture (théorique)',
+          String(stock.qte_cloture_avant_comptage ?? stock.qte_cloture),
+          montant(stock.valeur_cloture_avant_comptage ?? stock.valeur_cloture),
+        ],
+        ...(stock.produits_comptes
+          ? [
+              [
+                `Comptage physique (${stock.produits_comptes} produit(s))`,
+                String(stock.qte_comptee ?? 0),
+                '',
+              ],
+              [
+                'Écart constaté au comptage',
+                String(stock.ecart_qte_comptage ?? 0),
+                montant(stock.ecart_valeur_comptage ?? 0),
+              ],
+              ['Stock après comptage (aligné)', String(stock.qte_cloture), montant(stock.valeur_cloture)],
+            ]
+          : [['Comptage physique', 'non effectué', '']]),
+      ],
+      foot: [
+        [
+          stock.produits_mouvementes
+            ? `Produits mouvementés : ${stock.produits_mouvementes}`
+            : 'Aucun produit mouvementé sur ce shift',
+          '',
+          '',
+        ],
+      ],
+      footStyles: { fillColor: [245, 245, 245], textColor: 60, fontStyle: 'normal', fontSize: 8 },
+    });
+    y = ((doc as any).lastAutoTable?.finalY ?? y) + 14;
+  }
 
   // --- Commentaire
   if (session.commentaire && session.commentaire.trim()) {

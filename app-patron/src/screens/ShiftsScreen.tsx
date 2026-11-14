@@ -57,6 +57,12 @@ interface SessionShift {
   montant_compte: number | null;
   ecart: number | null;
   commentaire: string | null;
+  comptage_stock?: {
+    effectue: boolean;
+    produits_comptes: number;
+    ecart_qte: number;
+    ecart_valeur: number;
+  };
 }
 
 interface SessionsShiftPayload {
@@ -78,6 +84,8 @@ interface SessionsShiftPayload {
     encaissements: number;
     ecart_cumule: number;
     nb_ecarts: number;
+    sessions_sans_comptage: number;
+    ecart_stock_valeur: number;
   };
 }
 
@@ -108,6 +116,12 @@ interface StockProduit {
   valeur_sorties_autres: number;
   qte_cloture: number;
   valeur_cloture: number;
+  qte_ajustements: number;
+  valeur_ajustements: number;
+  qte_comptee: number;
+  ecart_qte_comptage: number;
+  ecart_valeur_comptage: number;
+  compte_le: string | null;
   qte_comptee_jour: number;
   ecart_qte_jour: number;
   ecart_valeur_jour: number;
@@ -120,7 +134,15 @@ interface StockSession {
   shift: { nom: string; heure_debut: string; heure_fin: string };
   fenetre: { debut: string; fin: string };
   totaux: StockResume & { produits_suivis: number; produits_mouvementes: number };
-  comptage: {
+  comptage_shift: {
+    effectue: boolean;
+    produits_comptes: number;
+    ecart_qte: number;
+    ecart_valeur: number;
+    date_comptage: string | null;
+    portee: 'shift';
+  };
+  comptage_jour: {
     disponible: boolean;
     date_cloture: string;
     produits_comptes: number;
@@ -611,17 +633,27 @@ export function ShiftsScreen() {
             </div>
 
             {/* KPIs */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
               <Kpi label="Sessions" value={String(totaux?.sessions ?? 0)} hint={`${totaux?.sessions_ouvertes ?? 0} ouverte(s)`} />
               <Kpi label="CA total" value={formatMontant(totaux?.ventes ?? 0)} />
               <Kpi label="CA bar" value={formatMontant(totaux?.ventes_bar ?? 0)} />
               <Kpi label="CA cuisine" value={formatMontant(totaux?.ventes_cuisine ?? 0)} />
               <Kpi label="Encaissements" value={formatMontant(totaux?.encaissements ?? 0)} />
               <Kpi
-                label="Écarts cumulés"
+                label="Écart de caisse"
                 value={formatMontant(totaux?.ecart_cumule ?? 0)}
                 tone={(totaux?.ecart_cumule ?? 0) === 0 ? 'neutral' : 'warn'}
                 hint={`${totaux?.nb_ecarts ?? 0} session(s)`}
+              />
+              <Kpi
+                label="Écart de stock"
+                value={formatMontant(totaux?.ecart_stock_valeur ?? 0)}
+                tone={(totaux?.ecart_stock_valeur ?? 0) === 0 ? 'neutral' : 'warn'}
+                hint={
+                  (totaux?.sessions_sans_comptage ?? 0) > 0
+                    ? `${totaux?.sessions_sans_comptage} session(s) non comptée(s)`
+                    : 'Comptage saisi à chaque passation'
+                }
               />
             </div>
 
@@ -1090,6 +1122,21 @@ export function ShiftsScreen() {
                       <Metric label="Sorties hors ventes" value={formatMontant(Number(stockDetail.totaux.valeur_sorties_autres))} hint={`−${stockDetail.totaux.qte_sorties_autres} unités`} tone={stockDetail.totaux.qte_sorties_autres > 0 ? 'warn' : 'neutral'} />
                       <Metric label="Valeur du stock vendu" value={formatMontant(Number(stockDetail.totaux.valeur_vendues))} hint={`${stockDetail.totaux.qte_vendues} unités`} />
                       <Metric label="Produits mouvementés" value={String(stockDetail.totaux.produits_mouvementes)} hint={`sur ${stockDetail.totaux.produits_suivis} suivis`} />
+                      <Metric
+                        label="Écart de comptage"
+                        value={formatMontant(Number(stockDetail.totaux.ecart_valeur_comptage || 0))}
+                        hint={
+                          stockDetail.comptage_shift?.effectue
+                            ? `${stockDetail.comptage_shift.produits_comptes} produit(s) · ${stockDetail.totaux.ecart_qte_comptage || 0} unité(s)`
+                            : 'Aucun comptage saisi'
+                        }
+                        tone={Number(stockDetail.totaux.ecart_valeur_comptage || 0) === 0 ? 'neutral' : 'warn'}
+                      />
+                      <Metric
+                        label="Stock après comptage"
+                        value={formatMontant(Number(stockDetail.totaux.valeur_cloture))}
+                        hint={`théorique ${stockDetail.totaux.qte_cloture_avant_comptage ?? stockDetail.totaux.qte_cloture} → compté ${stockDetail.totaux.qte_comptee ?? 0}`}
+                      />
                     </div>
 
                     <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 dark:border-white/10">
@@ -1102,13 +1149,15 @@ export function ShiftsScreen() {
                             <th className="text-right px-2 py-1.5">Vend.</th>
                             <th className="text-right px-2 py-1.5">Aut.</th>
                             <th className="text-right px-2 py-1.5">Clôt.</th>
+                            <th className="text-right px-2 py-1.5">Compté</th>
+                            <th className="text-right px-2 py-1.5">Écart</th>
                             <th className="text-right px-2 py-1.5">Valeur vendue</th>
                           </tr>
                         </thead>
                         <tbody>
                           {stockDetail.produits.length === 0 && (
                             <tr>
-                              <td colSpan={7} className="px-2 py-3 text-center text-neutral-500">
+                              <td colSpan={9} className="px-2 py-3 text-center text-neutral-500">
                                 Aucun mouvement de stock sur cette session.
                               </td>
                             </tr>
@@ -1126,6 +1175,19 @@ export function ShiftsScreen() {
                               <td className="px-2 py-1.5 text-right tabular-nums text-blue-600">{p.qte_vendues || ''}</td>
                               <td className="px-2 py-1.5 text-right tabular-nums text-amber-600">{p.qte_sorties_autres || ''}</td>
                               <td className="px-2 py-1.5 text-right tabular-nums font-bold text-primary dark:text-white">{p.qte_cloture}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums">{p.compte_le ? p.qte_comptee : '—'}</td>
+                              <td
+                                className={twMerge(
+                                  'px-2 py-1.5 text-right tabular-nums font-bold',
+                                  !p.compte_le
+                                    ? 'text-neutral-300 dark:text-neutral-600'
+                                    : p.ecart_qte_comptage === 0
+                                    ? 'text-emerald-600'
+                                    : 'text-amber-600'
+                                )}
+                              >
+                                {p.compte_le ? (p.ecart_qte_comptage > 0 ? `+${p.ecart_qte_comptage}` : p.ecart_qte_comptage) : '—'}
+                              </td>
                               <td className="px-2 py-1.5 text-right tabular-nums">{p.valeur_vendues ? formatMontant(p.valeur_vendues) : ''}</td>
                             </tr>
                           ))}
@@ -1135,9 +1197,9 @@ export function ShiftsScreen() {
 
                     <p className="flex items-start gap-1.5 mt-3 text-[11px] text-neutral-500 dark:text-neutral-400">
                       <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      {stockDetail.comptage.disponible
-                        ? `Un comptage physique existe pour la journée d'exploitation (${stockDetail.comptage.produits_comptes} produit(s), écart ${formatMontant(stockDetail.comptage.ecart_valeur)}). Il couvre la journée entière, pas uniquement ce shift.`
-                        : "Aucun comptage physique sur cette journée : le rapprochement est théorique, reconstruit à partir des mouvements de stock (ouverture = stock actuel moins les mouvements postérieurs au shift)."}
+                      {stockDetail.comptage_shift?.effectue
+                        ? `Comptage de passation saisi le ${stockDetail.comptage_shift.date_comptage ? new Date(stockDetail.comptage_shift.date_comptage).toLocaleString('fr-FR') : '—'} : ${stockDetail.comptage_shift.produits_comptes} produit(s), écart ${formatMontant(stockDetail.comptage_shift.ecart_valeur)}. Le stock a été aligné sur le compté (ajustements tracés).`
+                        : "Aucun comptage de passation : le rapprochement est théorique, reconstruit à partir des mouvements de stock. Le comptage se saisit depuis le comptoir, au moment de la clôture du shift."}
                     </p>
                   </>
                 )}
@@ -1257,6 +1319,22 @@ function SessionCard({
             )}
           >
             {ecart === null ? 'En cours' : ecart === 0 ? 'Sans écart' : `Écart ${formatMontant(ecart)}`}
+          </p>
+          <p
+            className={twMerge(
+              'text-[11px] font-bold tabular-nums',
+              !session.comptage_stock?.effectue
+                ? 'text-neutral-400'
+                : session.comptage_stock.ecart_qte === 0
+                ? 'text-green-600'
+                : 'text-amber-600'
+            )}
+          >
+            {session.comptage_stock?.effectue
+              ? session.comptage_stock.ecart_qte === 0
+                ? 'Stock sans écart'
+                : `Stock ${session.comptage_stock.ecart_qte > 0 ? '+' : ''}${session.comptage_stock.ecart_qte} u. (${formatMontant(session.comptage_stock.ecart_valeur)})`
+              : 'Stock non compté'}
           </p>
         </div>
         <button

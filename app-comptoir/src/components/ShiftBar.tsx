@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
 import { formatPrice } from '../lib/utils';
-import { Clock, Play, Square, X, AlertTriangle, Loader2 } from 'lucide-react';
+import { Clock, Play, Square, X, AlertTriangle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 
 /**
  * Bandeau de shift : ouverture / clôture (passation).
@@ -30,6 +30,12 @@ export function ShiftBar() {
   const [commentaire, setCommentaire] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  // Comptage physique de stock à la passation
+  const [stockPrep, setStockPrep] = useState<any>(null);
+  const [stockCounts, setStockCounts] = useState<Record<string, string>>({});
+  const [stockSearch, setStockSearch] = useState('');
+  const [stockOpen, setStockOpen] = useState(true);
 
   const loadActive = useCallback(async () => {
     const { data, error: rpcError } = await supabase.rpc('session_shift_active');
@@ -107,17 +113,76 @@ export function ShiftBar() {
     setMontantCompte('');
     setCommentaire('');
     setSessionDetail(null);
+    setStockPrep(null);
+    setStockCounts({});
+    setStockSearch('');
+    setStockOpen(true);
     setIsCloseModal(true);
 
-    const { data, error: rpcError } = await supabase.rpc('get_solde_session', {
-      p_session_id: active.session.id,
-    });
-    if (rpcError) {
-      setError(rpcError.message);
+    const sessionId = active.session.id;
+    const [soldeRes, prepRes] = await Promise.all([
+      supabase.rpc('get_solde_session', { p_session_id: sessionId }),
+      supabase.rpc('get_comptage_shift_preparation', { p_session_id: sessionId }),
+    ]);
+
+    if (soldeRes.error) {
+      setError(soldeRes.error.message);
       return;
     }
-    setSessionDetail(data);
-    setMontantCompte(String((data as any)?.solde_theorique ?? ''));
+    setSessionDetail(soldeRes.data);
+    setMontantCompte(String((soldeRes.data as any)?.solde_theorique ?? ''));
+
+    if (!prepRes.error && prepRes.data) {
+      const prep = prepRes.data as any;
+      setStockPrep(prep);
+      const pre: Record<string, string> = {};
+      (prep.produits || []).forEach((p: any) => {
+        if (p.quantite_comptee !== null && p.quantite_comptee !== undefined) {
+          pre[p.produit_id] = String(p.quantite_comptee);
+        }
+      });
+      setStockCounts(pre);
+    } else if (prepRes.error) {
+      // Le comptage reste optionnel : on n'empêche pas la clôture.
+      console.warn('Préparation comptage stock:', prepRes.error.message);
+    }
+  };
+
+  const produitsStock = useMemo(() => {
+    const list: any[] = stockPrep?.produits || [];
+    const q = stockSearch.trim().toLowerCase();
+    return q ? list.filter((p) => String(p.produit_nom).toLowerCase().includes(q)) : list;
+  }, [stockPrep, stockSearch]);
+
+  const lignesComptage = useMemo(
+    () =>
+      Object.entries(stockCounts)
+        .filter(([, v]) => v !== '' && Number.isFinite(Number(v)))
+        .map(([produit_id, v]) => ({ produit_id, quantite_comptee: Math.max(0, Math.round(Number(v))) })),
+    [stockCounts]
+  );
+
+  const varianceStock = useMemo(() => {
+    let qte = 0;
+    let valeur = 0;
+    (stockPrep?.produits || []).forEach((p: any) => {
+      const raw = stockCounts[p.produit_id];
+      if (raw === undefined || raw === '') return;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return;
+      const delta = Math.round(n) - Number(p.quantite_theorique || 0);
+      qte += delta;
+      valeur += delta * Number(p.cout_unitaire || 0);
+    });
+    return { qte, valeur };
+  }, [stockPrep, stockCounts]);
+
+  const remplirTheorique = () => {
+    const map: Record<string, string> = {};
+    (stockPrep?.produits || []).forEach((p: any) => {
+      map[p.produit_id] = String(p.quantite_theorique);
+    });
+    setStockCounts(map);
   };
 
   const handleClose = async () => {
@@ -130,6 +195,22 @@ export function ShiftBar() {
 
     setBusy(true);
     setError('');
+
+    // Comptage physique de stock, saisi au moment de la passation
+    if (lignesComptage.length > 0) {
+      const { error: countError } = await supabase.rpc('enregistrer_comptage_shift', {
+        p_session_id: active.session.id,
+        p_lignes: lignesComptage,
+        p_commentaire: commentaire || null,
+        p_appliquer_ajustement: true,
+      });
+      if (countError) {
+        setBusy(false);
+        setError(`Comptage du stock : ${countError.message}`);
+        return;
+      }
+    }
+
     const { error: rpcError } = await supabase.rpc('fermer_session_shift', {
       p_session_id: active.session.id,
       p_montant_compte: valeur,
@@ -355,6 +436,127 @@ export function ShiftBar() {
                       Écart : {formatPrice(ecartPreview)}
                     </div>
                   )}
+
+                  {/* Comptage physique du stock */}
+                  <div className="rounded-xl border border-neutral-200 dark:border-neutral-600 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setStockOpen((v) => !v)}
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-neutral-100 dark:bg-neutral-700/50 text-left"
+                    >
+                      <span className="text-xs font-bold text-neutral-700 dark:text-neutral-200">
+                        Comptage du stock
+                        <span className="ml-1 font-normal text-neutral-500">
+                          ({lignesComptage.length}/{stockPrep?.produits?.length ?? 0} saisis)
+                        </span>
+                      </span>
+                      {stockOpen ? (
+                        <ChevronUp className="w-4 h-4 text-neutral-500" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-neutral-500" />
+                      )}
+                    </button>
+
+                    {stockOpen && (
+                      <div className="p-3 space-y-2">
+                        {!stockPrep ? (
+                          <p className="text-xs text-neutral-400">Chargement des produits suivis…</p>
+                        ) : stockPrep.produits?.length === 0 ? (
+                          <p className="text-xs text-neutral-400">
+                            Aucun produit suivi en stock pour cet établissement.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={stockSearch}
+                                onChange={(e) => setStockSearch(e.target.value)}
+                                placeholder="Rechercher un produit…"
+                                className="flex-1 px-2 py-1.5 bg-neutral-100 dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 rounded-lg text-xs text-primary dark:text-white outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={remplirTheorique}
+                                className="px-2 py-1.5 rounded-lg bg-neutral-200 dark:bg-neutral-700 text-[10px] font-bold text-neutral-700 dark:text-neutral-200 whitespace-nowrap"
+                                title="Reprendre les quantités théoriques pour tous les produits"
+                              >
+                                Tout à l'identique
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setStockCounts({})}
+                                className="px-2 py-1.5 rounded-lg text-[10px] font-bold text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-700 whitespace-nowrap"
+                              >
+                                Effacer
+                              </button>
+                            </div>
+
+                            <div className="max-h-56 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-700 rounded-lg border border-neutral-100 dark:border-neutral-700">
+                              {produitsStock.map((p: any) => {
+                                const raw = stockCounts[p.produit_id];
+                                const saisi = raw !== undefined && raw !== '' && Number.isFinite(Number(raw));
+                                const delta = saisi ? Math.round(Number(raw)) - Number(p.quantite_theorique) : 0;
+                                return (
+                                  <div key={p.produit_id} className="flex items-center gap-2 px-2 py-1.5">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-bold text-primary dark:text-white truncate">
+                                        {p.produit_nom}
+                                      </p>
+                                      <p className="text-[10px] text-neutral-500">
+                                        Théorique {p.quantite_theorique} · {p.departement === 'cuisine' ? 'Cuisine' : 'Bar'}
+                                      </p>
+                                    </div>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      inputMode="numeric"
+                                      value={raw ?? ''}
+                                      onChange={(e) =>
+                                        setStockCounts((prev) => ({ ...prev, [p.produit_id]: e.target.value }))
+                                      }
+                                      placeholder="—"
+                                      className="w-16 px-2 py-1 text-right bg-white dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 rounded-md text-xs font-bold text-primary dark:text-white outline-none"
+                                    />
+                                    <span
+                                      className={`w-10 text-right text-[11px] font-bold tabular-nums ${
+                                        !saisi
+                                          ? 'text-neutral-300 dark:text-neutral-600'
+                                          : delta === 0
+                                          ? 'text-semantic-green'
+                                          : 'text-semantic-amber'
+                                      }`}
+                                    >
+                                      {saisi ? (delta > 0 ? `+${delta}` : delta) : '—'}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {lignesComptage.length > 0 && (
+                              <div className="flex items-center justify-between text-xs font-bold">
+                                <span className="text-neutral-600 dark:text-neutral-300">Écart total</span>
+                                <span
+                                  className={
+                                    varianceStock.valeur === 0 ? 'text-semantic-green' : 'text-semantic-amber'
+                                  }
+                                >
+                                  {varianceStock.qte > 0 ? '+' : ''}
+                                  {varianceStock.qte} u. · {formatPrice(varianceStock.valeur)}
+                                </span>
+                              </div>
+                            )}
+
+                            <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                              Laissez vide un produit non compté. Le stock des produits saisis sera aligné
+                              sur la quantité comptée (mouvement d'ajustement tracé).
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   <div>
                     <label className="block text-xs font-bold text-neutral-500 dark:text-neutral-400 mb-1">
