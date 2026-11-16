@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSupabaseQuery } from '../hooks/useSupabaseQuery';
 import { supabase } from '../config/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -8,7 +8,7 @@ import { fr } from 'date-fns/locale';
 import {
   Plus, Minus, Wallet, ArrowUpCircle, ArrowDownCircle,
   Calendar, Clock, Search, DollarSign, CreditCard,
-  Banknote, Smartphone, Receipt, TrendingUp, TrendingDown
+  Banknote, Smartphone, Receipt, TrendingUp, TrendingDown, Clock3
 } from 'lucide-react';
 
 interface MouvementCaisse {
@@ -25,10 +25,47 @@ interface MouvementCaisse {
 
 interface SoldeCaisse {
   date: string;
+  /** Entrées de caisse hors ventes (fond, apports…) */
   entrees_caisse: number;
+  entrees_totales: number;
   sorties_caisse: number;
+  /** Sorties hors ventes (dépenses, retraits…) */
+  sorties_hors_encaissements: number;
+  remboursements: number;
+  /** Ventes encaissées (net des remboursements) */
   encaissements_ventes: number;
   solde_theorique: number;
+}
+
+interface SessionShiftCaisse {
+  id: string;
+  business_date: string;
+  statut: 'ouverte' | 'fermee';
+  shift_nom: string;
+  heure_debut: string;
+  heure_fin: string;
+  ouverte_le: string;
+  fermee_le: string | null;
+  ouverte_par: string;
+  fermee_par: string;
+  fond_initial: number;
+  ventes: number;
+  encaissements: number;
+  entrees_hors_ventes: number;
+  sorties_hors_ventes: number;
+  solde_theorique: number;
+  montant_compte: number | null;
+  ecart: number | null;
+}
+
+interface SessionsShiftPayload {
+  sessions: SessionShiftCaisse[];
+  totaux: {
+    sessions: number;
+    ventes: number;
+    encaissements: number;
+    ecart_cumule: number;
+  };
 }
 
 const MOTIFS_PREDEFINIS = {
@@ -61,6 +98,7 @@ export function CaisseScreen() {
   const [commentaire, setCommentaire] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [shiftPeriod, setShiftPeriod] = useState<1 | 7 | 30>(1);
 
   // Fetch solde
   const { data: solde, refetch: refetchSolde } = useSupabaseQuery<SoldeCaisse>(
@@ -98,6 +136,27 @@ export function CaisseScreen() {
 
   const totalEntrees = mouvements?.reduce((sum, m) => sum + (m.type === 'entree' ? m.montant : 0), 0) || 0;
   const totalSorties = mouvements?.reduce((sum, m) => sum + (m.type === 'sortie' ? m.montant : 0), 0) || 0;
+
+  // Caisse par shift : jour sélectionné, ou vue sur 7 / 30 jours
+  const shiftRange = useMemo(() => {
+    const fin = selectedDate;
+    const d = new Date(`${selectedDate}T12:00:00`);
+    d.setDate(d.getDate() - (shiftPeriod - 1));
+    return { debut: format(d, 'yyyy-MM-dd'), fin };
+  }, [selectedDate, shiftPeriod]);
+
+  const { data: shiftsCaisse } = useSupabaseQuery<SessionsShiftPayload | null>(
+    ['sessions_caisse_comptoir', shiftRange.debut, shiftRange.fin, profile?.etablissement_id],
+    async () => {
+      if (!profile?.etablissement_id) return { data: null, error: null };
+      const { data, error } = await supabase.rpc('get_sessions_shift', {
+        p_debut: shiftRange.debut,
+        p_fin: shiftRange.fin,
+      });
+      return { data: (data as unknown as SessionsShiftPayload) || null, error };
+    },
+    { enabled: !!profile?.etablissement_id }
+  );
 
   const handleSubmit = async () => {
     if (!montant || !motif) return;
@@ -189,16 +248,33 @@ export function CaisseScreen() {
           </div>
         )}
 
-        {/* Solde Card */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Solde Card : la formule affichée est
+            solde = entrées hors ventes + ventes encaissées − sorties hors ventes */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white dark:bg-neutral-800/40 backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="bg-emerald-100 dark:bg-emerald-500/20 rounded-full p-1.5">
+                <Banknote className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <span className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase">Ventes encaissées</span>
+            </div>
+            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{formatPrice(solde?.encaissements_ventes || 0)}</p>
+            <p className="text-[11px] text-neutral-400 mt-1">
+              {(solde?.remboursements || 0) > 0
+                ? `net de ${formatPrice(solde?.remboursements || 0)} de remboursements`
+                : 'espèces + mobile money + autres'}
+            </p>
+          </div>
+
           <div className="bg-white dark:bg-neutral-800/40 backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-5">
             <div className="flex items-center gap-2 mb-2">
               <div className="bg-green-100 dark:bg-green-500/20 rounded-full p-1.5">
                 <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
               </div>
-              <span className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase">Entrées caisse</span>
+              <span className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase">Entrées hors ventes</span>
             </div>
             <p className="text-2xl font-bold text-green-600 dark:text-green-400">{formatPrice(solde?.entrees_caisse || 0)}</p>
+            <p className="text-[11px] text-neutral-400 mt-1">fonds, apports, avances</p>
           </div>
 
           <div className="bg-white dark:bg-neutral-800/40 backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-5">
@@ -206,9 +282,14 @@ export function CaisseScreen() {
               <div className="bg-semantic-red/10 rounded-full p-1.5">
                 <TrendingDown className="w-4 h-4 text-semantic-red" />
               </div>
-              <span className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase">Sorties caisse</span>
+              <span className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase">Sorties hors ventes</span>
             </div>
-            <p className="text-2xl font-bold text-semantic-red">{formatPrice(solde?.sorties_caisse || 0)}</p>
+            <p className="text-2xl font-bold text-semantic-red">{formatPrice(solde?.sorties_hors_encaissements || 0)}</p>
+            <p className="text-[11px] text-neutral-400 mt-1">
+              {(solde?.sorties_caisse || 0) > (solde?.sorties_hors_encaissements || 0)
+                ? `+ ${formatPrice((solde?.sorties_caisse || 0) - (solde?.sorties_hors_encaissements || 0))} de remboursements`
+                : 'dépenses, retraits'}
+            </p>
           </div>
 
           <div className="bg-white dark:bg-neutral-800/40 backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 p-5">
@@ -221,6 +302,111 @@ export function CaisseScreen() {
             <p className={`text-2xl font-bold ${(solde?.solde_theorique || 0) >= 0 ? 'text-neutral-900 dark:text-white' : 'text-semantic-red'}`}>
               {formatPrice(solde?.solde_theorique || 0)}
             </p>
+            <p className="text-[11px] text-neutral-400 mt-1">entrées + ventes − sorties</p>
+          </div>
+        </div>
+
+        {/* Caisse par shift */}
+        <div className="bg-white dark:bg-neutral-800/40 backdrop-blur-md rounded-xl border border-neutral-200 dark:border-white/5 mb-6">
+          <div className="p-4 border-b border-neutral-200 dark:border-white/5 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Clock3 className="w-4 h-4 text-neutral-400" />
+              <h3 className="font-bold text-neutral-900 dark:text-white">Caisse par shift</h3>
+              {shiftsCaisse?.totaux && (
+                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {shiftsCaisse.totaux.sessions} session(s) · {formatPrice(shiftsCaisse.totaux.encaissements)} encaissés
+                </span>
+              )}
+            </div>
+            <div className="flex p-1 bg-neutral-100 dark:bg-white/5 rounded-xl">
+              {([1, 7, 30] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setShiftPeriod(p)}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    shiftPeriod === p ? 'bg-white dark:bg-dark-accent text-primary dark:text-white shadow-sm' : 'text-neutral-500'
+                  }`}
+                >
+                  {p === 1 ? 'Jour' : `${p} jours`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-4">
+            {!shiftsCaisse || shiftsCaisse.sessions.length === 0 ? (
+              <p className="text-sm text-neutral-400 text-center py-6">
+                Aucune session de shift sur cette période. Les sessions s'ouvrent depuis le bandeau en haut de l'écran.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {shiftsCaisse.sessions.map((s) => (
+                  <div
+                    key={s.id}
+                    className="rounded-xl border border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/5 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-bold text-sm text-neutral-900 dark:text-white">{s.shift_nom}</p>
+                        <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                          {s.heure_debut} → {s.heure_fin}
+                          {shiftPeriod > 1 && ` · ${format(new Date(`${s.business_date}T12:00:00`), 'dd/MM', { locale: fr })}`}
+                        </p>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          s.statut === 'ouverte'
+                            ? 'bg-green-500/10 text-green-600 border-green-500/20'
+                            : 'bg-neutral-500/10 text-neutral-500 border-neutral-500/20'
+                        }`}
+                      >
+                        {s.statut === 'ouverte' ? 'Ouverte' : 'Fermée'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      <div>
+                        <p className="text-[10px] uppercase font-bold text-neutral-400">Ventes encaissées</p>
+                        <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatPrice(s.encaissements)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase font-bold text-neutral-400">Fond initial</p>
+                        <p className="text-sm font-bold text-neutral-900 dark:text-white">{formatPrice(s.fond_initial)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase font-bold text-neutral-400">Entrées hors ventes</p>
+                        <p className="text-sm font-bold text-green-600 dark:text-green-400">{formatPrice(s.entrees_hors_ventes)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase font-bold text-neutral-400">Sorties hors ventes</p>
+                        <p className="text-sm font-bold text-semantic-red">−{formatPrice(s.sorties_hors_ventes)}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-white/10 flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase text-neutral-500">Solde théorique</span>
+                      <span className="text-sm font-bold text-neutral-900 dark:text-white">{formatPrice(s.solde_theorique)}</span>
+                    </div>
+
+                    {s.ecart !== null && (
+                      <p
+                        className={`mt-1 text-[11px] font-bold ${
+                          s.ecart === 0 ? 'text-green-600' : 'text-semantic-amber'
+                        }`}
+                      >
+                        {s.ecart === 0 ? 'Sans écart de caisse' : `Écart : ${formatPrice(s.ecart)}`}
+                        {s.montant_compte !== null && ` · compté ${formatPrice(s.montant_compte)}`}
+                      </p>
+                    )}
+
+                    <p className="mt-1 text-[10px] text-neutral-400 truncate">
+                      {s.ouverte_par}
+                      {s.fermee_le && ` · fermée par ${s.fermee_par}`}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
