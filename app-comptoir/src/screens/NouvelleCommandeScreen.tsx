@@ -116,14 +116,26 @@ export default function NouvelleCommandeScreen() {
   const prixMap = useMemo(() => buildPrixMap(produits, tarifs, now), [produits, tarifs]);
 
   const filtered = useMemo(() => {
-    let list = (produits || []).filter(isDisponible);
+    // Catalogue complet : les produits en rupture restent visibles (badgés),
+    // sinon ils disparaissent silencieusement de l'écran de commande.
+    let list = (produits || []).slice();
     if (categorie !== 'all') list = list.filter(p => p.categorie === categorie);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(p => p.nom.toLowerCase().includes(q));
     }
-    return list;
+    return list.sort((a, b) => {
+      const ra = isDisponible(a) ? 0 : 1;
+      const rb = isDisponible(b) ? 0 : 1;
+      if (ra !== rb) return ra - rb;
+      return a.nom.localeCompare(b.nom);
+    });
   }, [produits, categorie, search]);
+
+  const rupturesCount = useMemo(
+    () => (produits || []).filter(p => !isDisponible(p)).length,
+    [produits]
+  );
 
   const total = useMemo(
     () => cart.reduce((sum, l) => sum + l.prix * l.quantite, 0),
@@ -304,6 +316,12 @@ export default function NouvelleCommandeScreen() {
             </div>
           </div>
 
+          {rupturesCount > 0 && (
+            <p className="text-[11px] font-bold uppercase tracking-wider text-semantic-red">
+              {rupturesCount} produit{rupturesCount > 1 ? 's' : ''} en rupture (non commandable)
+            </p>
+          )}
+
           {isLoading ? (
             <div className="flex justify-center py-16">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -316,11 +334,18 @@ export default function NouvelleCommandeScreen() {
                 const qty = getStockQty(p);
                 const prix = prixMap.get(p.id) ?? p.prix_vente;
                 const enCart = cart.find(l => l.produit.id === p.id)?.quantite || 0;
+                const rupture = !isDisponible(p);
                 return (
                   <button
                     key={p.id}
                     onClick={() => addToCart(p)}
-                    className="text-left p-4 rounded-2xl bg-white dark:bg-neutral-900/60 border border-neutral-200 dark:border-white/5 hover:border-primary/40 hover:-translate-y-0.5 transition-all relative"
+                    disabled={rupture}
+                    title={rupture ? 'Produit en rupture de stock' : undefined}
+                    className={`text-left p-4 rounded-2xl bg-white dark:bg-neutral-900/60 border border-neutral-200 dark:border-white/5 transition-all relative ${
+                      rupture
+                        ? 'opacity-60 cursor-not-allowed'
+                        : 'hover:border-primary/40 hover:-translate-y-0.5'
+                    }`}
                   >
                     <div className="flex items-start justify-between mb-2">
                       <span className={`p-1.5 rounded-lg ${
@@ -341,8 +366,8 @@ export default function NouvelleCommandeScreen() {
                     <p className="font-bold text-sm text-primary dark:text-white leading-tight line-clamp-2">{p.nom}</p>
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-sm font-black text-primary dark:text-white">{formatPrice(prix)}</span>
-                      <span className="text-[10px] font-bold text-neutral-400">
-                        {p.gestion_stock === false ? 'Sur commande' : `Stock ${qty}`}
+                      <span className={`text-[10px] font-bold ${rupture ? 'text-semantic-red' : 'text-neutral-400'}`}>
+                        {p.gestion_stock === false ? 'Sur commande' : rupture ? 'Rupture' : `Stock ${qty}`}
                       </span>
                     </div>
                   </button>

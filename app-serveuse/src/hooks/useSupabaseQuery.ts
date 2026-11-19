@@ -51,45 +51,42 @@ export function useProduitsDisponibles() {
     async (supabase) => {
       if (!etablissementId) return { data: [], error: null };
 
-      // 1. Récupérer les stocks des boissons et autres articles gérés en stock (> 0)
-      const { data: stockData, error: stockError } = await supabase
-        .from('stocks')
-        .select('*, produits!inner(*)')
-        .eq('etablissement_id', etablissementId)
-        .gt('quantite_actuelle', 0);
-
-      if (stockError) return { data: null, error: stockError };
-
-      // 2. Récupérer les plats de nourriture SANS gestion de stock (préparés à la commande)
-      const { data: nourritureData, error: nourritureError } = await supabase
+      // Catalogue complet : on ne filtre plus sur le stock > 0, sinon un produit
+      // en rupture disparaît de l'écran de commande (il doit rester visible,
+      // badgé « Rupture »). Les plats préparés à la commande restent illimités.
+      const { data: produitsData, error: produitsError } = await supabase
         .from('produits')
-        .select('*')
+        .select('*, stocks(quantite_actuelle, etablissement_id)')
         .eq('etablissement_id', etablissementId)
-        .eq('categorie', 'nourriture')
-        .eq('gestion_stock', false);
+        .eq('actif', true)
+        .order('nom');
 
-      if (nourritureError) return { data: null, error: nourritureError };
+      if (produitsError) return { data: null, error: produitsError };
 
-      // Transformer les stocks en ProduitAvecStock
-      const formattedStocks = (stockData || []).map((item: any) => ({
-        ...item.produits,
-        stock: {
-          quantite_disponible: item.quantite_actuelle
-        }
-      }));
+      const combined = (produitsData || [])
+        .map((produit: any) => {
+          const rows = Array.isArray(produit.stocks)
+            ? produit.stocks
+            : produit.stocks
+            ? [produit.stocks]
+            : [];
+          const ligne =
+            rows.find((s: any) => s.etablissement_id === etablissementId) ?? rows[0];
 
-      // Transformer la nourriture avec un stock fictif illimité/disponible
-      const formattedNourriture = (nourritureData || []).map((produit: any) => ({
-        ...produit,
-        stock: {
-          quantite_disponible: 9999 // Illimité pour la cuisine
-        }
-      }));
+          // Nourriture préparée à la commande : pas de stock physique
+          const sansSuivi = produit.categorie === 'nourriture' && !produit.gestion_stock;
+          const quantite = sansSuivi
+            ? 9999
+            : ligne
+            ? Number(ligne.quantite_actuelle ?? 0)
+            : produit.gestion_stock
+            ? 0
+            : 9999;
 
-      // Fusionner les deux listes et trier par nom
-      const combined = [...formattedStocks, ...formattedNourriture].sort((a, b) => 
-        a.nom.localeCompare(b.nom)
-      );
+          const { stocks, ...rest } = produit;
+          return { ...rest, stock: { quantite_disponible: quantite } };
+        })
+        .sort((a: any, b: any) => String(a.nom).localeCompare(String(b.nom)));
 
       return { data: combined, error: null };
     },

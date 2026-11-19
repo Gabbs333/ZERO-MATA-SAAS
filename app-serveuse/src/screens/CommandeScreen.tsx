@@ -62,6 +62,9 @@ export function CommandeScreen({ navigation, route }: CommandeScreenProps) {
     { value: 'autre', label: 'Autre' },
   ];
 
+  const isRupture = (p: any) =>
+    Number(p.stock?.quantite_disponible ?? p.quantite_disponible ?? 0) <= 0;
+
   // Filtrer les produits par catégorie et recherche
   const produitsFiltered = useMemo(() => {
     if (!produits) return [];
@@ -76,9 +79,20 @@ export function CommandeScreen({ navigation, route }: CommandeScreenProps) {
         p.nom.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
-    
-    return filtered;
+
+    // Les produits disponibles d'abord, les ruptures en fin de liste
+    return [...filtered].sort((a: any, b: any) => {
+      const ra = isRupture(a) ? 1 : 0;
+      const rb = isRupture(b) ? 1 : 0;
+      if (ra !== rb) return ra - rb;
+      return String(a.nom).localeCompare(String(b.nom));
+    });
   }, [produits, selectedCategorie, searchQuery]);
+
+  const rupturesCount = useMemo(
+    () => (produits || []).filter(isRupture).length,
+    [produits]
+  );
 
   // Calculer le nombre d'articles et le montant total
   const itemsCount = Array.from(items.values()).reduce(
@@ -294,6 +308,11 @@ export function CommandeScreen({ navigation, route }: CommandeScreenProps) {
             </TouchableOpacity>
           ))}
         </ScrollView>
+        {rupturesCount > 0 && (
+          <Text className="px-5 pt-3 text-[10px] font-black uppercase tracking-widest text-semantic-red/80">
+            {rupturesCount} produit{rupturesCount > 1 ? 's' : ''} en rupture (non commandable)
+          </Text>
+        )}
       </View>
 
       <FlatList
