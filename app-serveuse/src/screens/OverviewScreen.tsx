@@ -22,14 +22,15 @@ import {
   ChevronLeft,
   ArrowUpRight,
   ArrowDownRight,
+  AlertTriangle,
   X,
   Calendar,
   Receipt,
   User
 } from 'lucide-react-native';
 import { LineChart } from 'react-native-gifted-charts';
-import { useSupabaseQuery, useCreancesServeuse } from '../hooks/useSupabaseQuery';
-import { useCommandesRealtime, useFacturesRealtime } from '../hooks/useRealtimeSubscription';
+import { useSupabaseQuery, useCreancesServeuse, useAlertesStock } from '../hooks/useSupabaseQuery';
+import { useCommandesRealtime, useFacturesRealtime, useStockRealtime } from '../hooks/useRealtimeSubscription';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { useColorScheme } from 'nativewind';
@@ -126,6 +127,19 @@ export function OverviewScreen({ navigation }: any) {
         // Also refresh paginated list specifically
         queryClient.invalidateQueries({ queryKey: ['creances-paginated'] });
       }
+    }, [queryClient])
+  );
+
+  // Alertes de stock (ruptures + produits sous seuil)
+  const { data: alertesStock } = useAlertesStock();
+  const rupturesStock = (alertesStock || []).filter((a) => a.rupture);
+  const basStock = (alertesStock || []).filter((a) => !a.rupture);
+  const stockAlertsCount = alertesStock?.length || 0;
+
+  useStockRealtime(
+    React.useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: ['alertes-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['produits-disponibles'] });
     }, [queryClient])
   );
 
@@ -280,6 +294,7 @@ export function OverviewScreen({ navigation }: any) {
               queryClient.invalidateQueries({ queryKey: ['waitress-stats'] });
               queryClient.invalidateQueries({ queryKey: ['creances'] });
               queryClient.invalidateQueries({ queryKey: ['my-commandes'] });
+              queryClient.invalidateQueries({ queryKey: ['alertes-stock'] });
             }} 
           />
         }
@@ -301,6 +316,51 @@ export function OverviewScreen({ navigation }: any) {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Alerte stock : ruptures visibles, jamais masquées */}
+        {stockAlertsCount > 0 && (
+          <View className="px-6 pt-4">
+            <TouchableOpacity
+              onPress={() => navigation.navigate('CommanderTab')}
+              className="bg-white dark:bg-dark-card rounded-2xl p-4 border border-red-500/30 flex-row items-start"
+            >
+              <View className="w-10 h-10 rounded-full bg-red-50 dark:bg-red-500/10 items-center justify-center mr-3">
+                <AlertTriangle size={20} color="#ef4444" />
+              </View>
+              <View className="flex-1">
+                <View className="flex-row items-center mb-0.5">
+                  <Text className="text-[10px] font-black text-red-500 uppercase tracking-widest">
+                    Alerte stock
+                  </Text>
+                  <View className="ml-2 px-1.5 py-0.5 rounded-full bg-red-500">
+                    <Text className="text-[9px] font-black text-white">{stockAlertsCount}</Text>
+                  </View>
+                </View>
+                <Text className="text-sm font-bold text-neutral-900 dark:text-white leading-tight">
+                  {rupturesStock.length > 0
+                    ? `${rupturesStock.length} produit${rupturesStock.length > 1 ? 's' : ''} en rupture`
+                    : `${basStock.length} produit${basStock.length > 1 ? 's' : ''} en stock bas`}
+                  {rupturesStock.length > 0 && basStock.length > 0
+                    ? ` · ${basStock.length} en stock bas`
+                    : ''}
+                </Text>
+                <Text
+                  className="text-xs text-neutral-500 dark:text-neutral-400 mt-1"
+                  numberOfLines={2}
+                >
+                  {(rupturesStock.length > 0 ? rupturesStock : basStock)
+                    .slice(0, 3)
+                    .map((a) => a.nom)
+                    .join(', ')}
+                  {(rupturesStock.length > 0 ? rupturesStock : basStock).length > 3
+                    ? ` +${(rupturesStock.length > 0 ? rupturesStock : basStock).length - 3}`
+                    : ''}
+                </Text>
+              </View>
+              <ChevronRight size={18} color={isDark ? '#737373' : '#a3a3a3'} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Date Filter */}
         <View className="px-6 py-4">

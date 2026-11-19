@@ -54,6 +54,15 @@ import { useNavigate } from 'react-router-dom';
 
 type Period = 'today' | 'week' | 'month' | 'custom';
 
+interface StockAlerte {
+  produit_id: string;
+  nom: string;
+  categorie: string;
+  quantite_actuelle: number;
+  seuil_alerte: number;
+  rupture: boolean;
+}
+
 export function DashboardScreen() {
   const profile = useAuthStore((state) => state.profile);
   const navigate = useNavigate();
@@ -486,13 +495,14 @@ export function DashboardScreen() {
     }
   );
 
-  // Fetch stock alerts
-  const { data: stockAlerts } = useSupabaseQuery(
-    ['stock_alerts'],
+  // Fetch stock alerts (produits à la limite ou sous leur seuil, ruptures en tête)
+  const { data: stockAlerts } = useSupabaseQuery<StockAlerte[]>(
+    ['stock_alerts', profile?.etablissement_id],
     async () => {
-      return supabase.rpc('check_stock_alerts')
-        .then(({ data, error }) => ({ data, error }));
-    }
+      const { data, error } = await supabase.rpc('check_stock_alerts');
+      return { data: (data ?? []) as StockAlerte[], error };
+    },
+    { enabled: !!profile?.etablissement_id }
   );
 
   // Fetch pending returns
@@ -726,24 +736,47 @@ export function DashboardScreen() {
       {/* Alert Banner */}
       {stockAlerts && stockAlerts.length > 0 && (
         <div className="px-4 pt-4">
-          <div className="flex items-start gap-3 p-3 bg-red-500/10 dark:bg-red-500/10 border border-red-500/20 dark:border-red-500/20 rounded-xl backdrop-blur-md">
-            <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-0.5">
-                <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Alerte Stock</p>
-                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest px-1.5 py-0.5 bg-neutral-100 dark:bg-white/5 rounded-full">Temps Réel</span>
-              </div>
-              <p className="text-sm text-primary dark:text-white font-medium leading-tight">
-                {stockAlerts[0].nom} est bas ({stockAlerts[0].stock_actuel} restant).
-                {stockAlerts.length > 1 && ` +${stockAlerts.length - 1} autres`}
-              </p>
+          <div className="rounded-xl border border-red-500/20 dark:border-red-500/20 bg-red-500/10 dark:bg-red-500/10 backdrop-blur-md overflow-hidden">
+            <div className="flex items-center gap-2 px-3 pt-3">
+              <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
+              <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Alertes stock</p>
+              <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-red-500 text-white leading-none">
+                {stockAlerts.length}
+              </span>
+              <span className="ml-auto text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Temps Réel</span>
             </div>
-            <button
-              onClick={() => navigate('/ravitaillements')}
-              className="text-red-500 font-bold text-xs underline decoration-red-500/30 underline-offset-4 active:scale-95 transition-transform"
-            >
-              Réapprovisionner
-            </button>
+
+            <ul className="px-3 py-2 divide-y divide-red-500/10">
+              {stockAlerts.slice(0, 4).map((alerte) => (
+                <li key={alerte.produit_id} className="flex items-center justify-between gap-3 py-1.5">
+                  <span className="text-sm font-medium text-primary dark:text-white truncate">{alerte.nom}</span>
+                  <span
+                    className={`text-[11px] font-black shrink-0 ${
+                      alerte.rupture ? 'text-red-500' : 'text-amber-500'
+                    }`}
+                  >
+                    {alerte.rupture ? 'Rupture' : `${alerte.quantite_actuelle} / seuil ${alerte.seuil_alerte}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="flex items-center justify-between px-3 pb-2.5">
+              <button
+                onClick={() => navigate('/stock')}
+                className="text-[11px] font-bold text-red-500/80 hover:underline"
+              >
+                {stockAlerts.length > 4
+                  ? `+${stockAlerts.length - 4} autre${stockAlerts.length - 4 > 1 ? 's' : ''} — voir le stock`
+                  : 'Voir le stock'}
+              </button>
+              <button
+                onClick={() => navigate('/ravitaillements')}
+                className="text-red-500 font-bold text-xs underline decoration-red-500/30 underline-offset-4 active:scale-95 transition-transform"
+              >
+                Réapprovisionner
+              </button>
+            </div>
           </div>
         </div>
       )}

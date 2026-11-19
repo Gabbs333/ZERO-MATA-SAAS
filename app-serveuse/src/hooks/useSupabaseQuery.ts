@@ -94,6 +94,34 @@ export function useProduitsDisponibles() {
   );
 }
 
+// Hook pour les alertes de stock de l'établissement (ruptures + produits sous seuil)
+export interface AlerteStock {
+  produit_id: string;
+  nom: string;
+  categorie: string;
+  quantite_actuelle: number;
+  seuil_alerte: number;
+  rupture: boolean;
+}
+
+export function useAlertesStock() {
+  const { user } = useAuthStore();
+  const etablissementId = user?.etablissement_id;
+
+  return useSupabaseQuery<AlerteStock[]>(
+    ['alertes-stock', etablissementId],
+    async (supabase) => {
+      if (!etablissementId) return { data: [], error: null };
+      // RPC cloisonnée : renvoie les produits suivis de l'établissement courant,
+      // ruptures en tête, y compris ceux sans ligne de stock (jamais initialisés).
+      const { data, error } = await supabase.rpc('check_stock_alerts');
+      if (error) return { data: null, error };
+      return { data: (data ?? []) as AlerteStock[], error: null };
+    },
+    { enabled: !!etablissementId, staleTime: 60 * 1000 }
+  );
+}
+
 // Hook pour récupérer les créances de la serveuse (filtré par établissement)
 export function useCreancesServeuse(serveuseId: string | undefined) {
   const { user } = useAuthStore();
